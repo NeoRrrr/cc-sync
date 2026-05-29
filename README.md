@@ -69,27 +69,15 @@ C:\Users\Admin\Dawn\Trunk\tools\python311\Windows-AMD64\bin\python.exe .\sync_fr
 C:\Users\Admin\Dawn\Trunk\tools\python311\Windows-AMD64\bin\python.exe .\sync_from_claude.py --config .\cc-sync.config.json --list-skills --json
 ```
 
-## 提交说明
+## 仓库说明
 
-提交 SVN 前不应提交这些中间产物：
+仓库只保留源码、锁文件和示例配置。依赖与构建产物由本地命令重新生成：
 
 - `node_modules/`
 - `dist/`
 - `src-tauri/target/`
+- `portable-dist/`
 - `__pycache__/`
 - `*.tsbuildinfo`
-- 临时验收文件，例如 `tmp_acceptance_*.json`
 
-应保留这些文件：
-
-- `src/`
-- `src-tauri/src/`
-- `package.json`
-- `package-lock.json`
-- `Cargo.toml`
-- `Cargo.lock`
-- `cc-sync.config.json`
-- `sync_from_claude.py`
-- `sync_config.py`
-- `run.bat`
-- `build.bat`
+本地真实配置使用 `cc-sync.config.json`，该文件不提交；公开仓库使用 `cc-sync.config.example.json` 作为模板。
