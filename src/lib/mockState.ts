@@ -1,0 +1,72 @@
+import type { SyncConfig } from "../types";
+
+/* 非桌面(浏览器 demo)模式下展示用的示例配置(v2 端点模型)。 */
+export const mockConfig: SyncConfig = {
+  schema_version: 2,
+  project_root: ".",
+  overwrite_md: true,
+  fallback_to_copy: true,
+  verbose: true,
+  endpoints: {
+    claude: {
+      label: "Claude Code",
+      dir: ".claude",
+      name: "Claude Code",
+      md: "CLAUDE.md",
+      md_local_candidates: [".claude/CLAUDE.local.md", ".claude/claude.local.md"],
+      skills_dirs: [".claude/skills", "tools/AI/claude/skills"],
+      docs_dirs: [".claude/docs", "tools/AI/claude/docs"],
+      mode: "junction"
+    },
+    codex: {
+      label: "Codex",
+      dir: ".codex",
+      name: "Codex",
+      md: "AGENTS.md",
+      md_local_candidates: [],
+      skills_dirs: [".codex/skills"],
+      docs_dirs: [".codex/docs"],
+      mode: "junction"
+    },
+    gemini: {
+      label: "Gemini",
+      dir: ".gemini",
+      name: "Gemini",
+      md: "GEMINI.md",
+      md_local_candidates: [],
+      skills_dirs: [".gemini/skills"],
+      docs_dirs: [".gemini/docs"],
+      mode: "junction"
+    }
+  },
+  sync: {
+    source: "claude",
+    targets: ["codex", "gemini"]
+  },
+  skill_selection: {
+    common: ["act-dev", "video-expert", "xlocust-smoke"],
+    extra: { codex: [], gemini: [] },
+    exclude: { codex: [], gemini: [] }
+  },
+  replacements: {
+    "claude->codex": {
+      ".claude": ".codex",
+      "Claude Code": "Codex",
+      "CLAUDE.md": "AGENTS.md",
+      "CLAUDE.local.md": "AGENTS.md",
+      "claude.local.md": "AGENTS.md"
+    },
+    "claude->gemini": {
+      ".claude": ".gemini",
+      "Claude Code": "Gemini",
+      "CLAUDE.md": "GEMINI.md",
+      "CLAUDE.local.md": "GEMINI.md",
+      "claude.local.md": "GEMINI.md"
+    }
+  },
+  runtime: {
+    python_executable: "python/bin/python.exe",
+    script_path: "sync_from_claude.py",
+    config_path: "cc-sync.config.json"
+  }
+};

@@ -1,0 +1,26 @@
+# Dependency caches
+node_modules/
+
+# Build output
+dist/
+portable-dist/
+src-tauri/target/
+
+# Local config and backups
+cc-sync.config.json
+*.bak
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# TypeScript incremental cache
+*.tsbuildinfo
+
+# Generated JavaScript from TypeScript config
+vite.config.js
+vite.config.d.ts
+
+# Logs and temporary acceptance files
+*.log
+tmp_acceptance_*.json
