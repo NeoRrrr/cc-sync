@@ -39,14 +39,19 @@ export function EndpointCard({
   const sortedSkills = [...diskSkills].sort(
     (a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.name.localeCompare(b.name)
   );
-  const legend = (["link", "copy", "broken"] as const)
-    .map((kind) => ({ kind, count: diskSkills.filter((s) => s.kind === kind).length }))
-    .filter((entry) => entry.count > 0);
   const kindLabel: Record<TargetSkill["kind"], string> = {
     link: text.app.skillLink,
     copy: text.app.skillCopy,
     broken: text.app.skillBroken,
   };
+  const legendColor: Record<TargetSkill["kind"], string> = {
+    link: "text-primary",
+    copy: "text-dim",
+    broken: "text-danger-text",
+  };
+  const legend = (["link", "copy", "broken"] as const)
+    .map((kind) => ({ kind, count: diskSkills.filter((s) => s.kind === kind).length }))
+    .filter((entry) => entry.count > 0);
 
   let skillBody: ReactNode;
   if (sortedSkills.length) {
@@ -60,41 +65,45 @@ export function EndpointCard({
   }
 
   return (
-    <article className={isTarget ? "target-card" : "target-card muted-card"}>
-      <header className="target-head">
-        <div className="target-title">
-          <div className="target-avatar">{(endpoint.label || id).slice(0, 1).toUpperCase()}</div>
-          <h3>{endpoint.label || id}</h3>
+    <article
+      className={`flex flex-col gap-[18px] rounded-2xl border border-line bg-card p-6 shadow-[var(--shadow-sm)] transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-md)] ${isTarget ? "" : "opacity-55"}`}
+    >
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-xl border border-primary-soft-border bg-primary-soft text-[1.1rem] font-extrabold text-primary">
+            {(endpoint.label || id).slice(0, 1).toUpperCase()}
+          </div>
+          <h3 className="m-0 text-[1.1rem] font-extrabold text-main">{endpoint.label || id}</h3>
         </div>
-        <label className="switch">
-          <input type="checkbox" checked={isTarget} onChange={(event) => onToggleTarget(event.target.checked)} />
-          <span>{isTarget ? text.app.syncTarget : text.app.notSyncTarget}</span>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input type="checkbox" checked={isTarget} onChange={(event) => onToggleTarget(event.target.checked)} className="h-4 w-4 cursor-pointer" />
+          <span className="text-[0.82rem] font-bold text-dim">{isTarget ? text.app.syncTarget : text.app.notSyncTarget}</span>
         </label>
       </header>
 
-      <div className="target-tags">
-        <span className="tag">{text.modeOptions[endpoint.mode]}</span>
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-full border border-primary-soft-border bg-primary-soft px-3 py-1 text-[0.74rem] font-bold text-primary">
+          {text.modeOptions[endpoint.mode]}
+        </span>
       </div>
 
       {hasSyncResult && (
-        <div className="preview-summary">
-          <span className="preview-chip">{text.app.mdTarget} {summary.md}</span>
-          <span className="preview-chip">{text.app.skillsDir} {summary.skills}</span>
-          <span className="preview-chip">{text.app.docsDir} {summary.docs}</span>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.mdTarget} {summary.md}</span>
+          <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.skillsDir} {summary.skills}</span>
+          <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.docsDir} {summary.docs}</span>
         </div>
       )}
 
-      <div className="path-list">
+      <div className="flex flex-col">
         {paths.map((path) => (
-          <div key={path.key} className="path-row">
-            <span>{path.label}</span>
-            <div className="path-main">
-              <code title={path.value}>{compactPath(path.value)}</code>
-              <button
-                type="button"
-                className="mini-action"
-                onClick={() => onOpen(path.value, `${id}-${path.label}`)}
-              >
+          <div key={path.key} className="border-t border-line py-[11px] first:border-t-0 first:pt-0">
+            <span className="mb-1.5 block text-[0.7rem] font-bold uppercase tracking-[0.04em] text-dim">{path.label}</span>
+            <div className="flex items-center justify-between gap-2.5">
+              <code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent text-[0.8rem] text-main [font-family:var(--font-mono)]" title={path.value}>
+                {compactPath(path.value)}
+              </code>
+              <button type="button" className="mini-action" onClick={() => onOpen(path.value, `${id}-${path.label}`)}>
                 {text.app.openLocation}
               </button>
             </div>
@@ -102,23 +111,23 @@ export function EndpointCard({
         ))}
       </div>
 
-      <div className="skill-group">
-        <div className="skill-group-head">
-          <span className="skill-group-title">{text.app.skills} · {diskSkills.length}</span>
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[0.78rem] font-bold text-dim">{text.app.skills} · {diskSkills.length}</span>
           {legend.length > 0 && (
-            <div className="skill-legend">
+            <div className="flex flex-wrap gap-3">
               {legend.map((entry) => (
-                <span key={entry.kind} className={`legend-${entry.kind}`}>
+                <span key={entry.kind} className={`text-[0.72rem] font-bold ${legendColor[entry.kind]}`}>
                   {kindLabel[entry.kind]} {entry.count}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <div className="skill-list">{skillBody}</div>
+        <div className="flex flex-wrap gap-2">{skillBody}</div>
       </div>
 
-      <div className="target-actions">
+      <div className="flex justify-end">
         <button type="button" className="ghost" onClick={onAdvanced}>
           {text.app.advancedConfig}
         </button>

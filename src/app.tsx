@@ -305,7 +305,11 @@ export default function App() {
   }
 
   if (!config) {
-    return <main className="workspace loading">{text.app.loading}</main>;
+    return (
+      <main className="mx-auto flex min-h-screen max-w-[1140px] flex-col items-center justify-center px-6 font-semibold text-dim">
+        {text.app.loading}
+      </main>
+    );
   }
 
   const sourceId = config.sync.source;
@@ -316,13 +320,15 @@ export default function App() {
   const syncErrors = plan?.errors.slice(0, 3) ?? [];
   const unselectLabel = (skill: string) => `${text.app.cancel} ${skill}`;
 
+  const fieldLabel = "text-[0.78rem] font-bold uppercase tracking-[0.05em] text-dim";
+
   return (
-    <main className="workspace">
+    <main className="mx-auto flex min-h-screen max-w-[1140px] flex-col gap-6 px-6 pb-14 pt-9">
       {view.name === "main" && (
         <>
-          <header className="topbar">
-            <div className="brand-block">
-              <p className="brand-title">{text.app.title}</p>
+          <header className="flex flex-wrap items-center justify-between gap-4 max-md:items-start">
+            <div className="flex items-center gap-[14px]">
+              <p className="m-0 text-[1.4rem] font-extrabold tracking-[-0.02em] text-primary">{text.app.title}</p>
               <button type="button" className="icon-btn" aria-label={text.app.settings} title={text.app.settings} onClick={() => setView({ name: "settings" })}>
                 <GearIcon />
               </button>
@@ -330,7 +336,7 @@ export default function App() {
                 <InfoIcon />
               </button>
             </div>
-            <div className="topbar-actions">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button type="button" className="utility-action" onClick={() => setView({ name: "commonSkills" })}>
                 {text.app.commonSkills}
               </button>
@@ -343,11 +349,12 @@ export default function App() {
             </div>
           </header>
 
-          <section className="control-bar">
-            <label className="control-field workspace-field">
-              <span>{text.app.workspace}</span>
-              <div className="field-inline">
+          <section className="flex flex-wrap items-end gap-7 rounded-2xl border border-line bg-card px-6 py-5 shadow-[var(--shadow-sm)] max-md:flex-col max-md:items-stretch">
+            <label className="flex min-w-[300px] flex-1 flex-col gap-2.5">
+              <span className={fieldLabel}>{text.app.workspace}</span>
+              <div className="flex items-center gap-2.5">
                 <input
+                  className="flex-1"
                   title={text.app.workspaceHint}
                   value={config.project_root}
                   onChange={(event) => setConfig((current) => (current ? { ...current, project_root: event.target.value } : current))}
@@ -360,8 +367,8 @@ export default function App() {
                 </button>
               </div>
             </label>
-            <label className="control-field">
-              <span>{text.app.source}</span>
+            <label className="flex flex-col gap-2.5">
+              <span className={fieldLabel}>{text.app.source}</span>
               <SegmentedControl<string>
                 ariaLabel={text.app.source}
                 value={sourceId}
@@ -369,8 +376,8 @@ export default function App() {
                 options={endpointEntries.map(([id, endpoint]) => ({ value: id, label: endpoint.label || id }))}
               />
             </label>
-            <label className="control-field">
-              <span>{text.app.scope}</span>
+            <label className="flex flex-col gap-2.5">
+              <span className={fieldLabel}>{text.app.scope}</span>
               <SegmentedControl<SyncScope>
                 ariaLabel={text.app.scope}
                 value={scope}
@@ -394,14 +401,17 @@ export default function App() {
             </section>
           )}
 
-          <section className="common-skill-panel" aria-label={text.app.activeCommonSkills}>
-            <div className="common-skill-head">
-              <span className="section-label">{text.app.activeCommonSkills}</span>
+          <section
+            className="flex flex-col gap-3.5 rounded-2xl border border-line bg-card px-[22px] py-[18px] shadow-[var(--shadow-sm)]"
+            aria-label={text.app.activeCommonSkills}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className={fieldLabel}>{text.app.activeCommonSkills}</span>
               <button type="button" className="mini-action" onClick={() => setView({ name: "commonSkills" })}>
                 {text.app.commonSkills}
               </button>
             </div>
-            <div className="skill-list">
+            <div className="flex flex-wrap gap-2">
               {config.skill_selection.common.length ? (
                 config.skill_selection.common.map((skill) => (
                   <span key={`common-${skill}`} className="skill-chip">
@@ -414,7 +424,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className="target-stack">
+          <section className="grid grid-cols-[repeat(auto-fill,minmax(360px,1fr))] gap-5">
             {targetEntries.map(([endpointId, endpoint]) => {
               const targetOperations = operationsByTarget.get(endpointId) ?? [];
               return (
@@ -439,9 +449,9 @@ export default function App() {
       )}
 
       {view.name === "commonSkills" && (
-        <section className="subpage">
+        <section className="flex flex-col gap-5">
           <SubpageHeader title={text.app.commonSkills} backLabel={text.app.back} onBack={() => setView({ name: "main" })} />
-          <div className="subpage-body">
+          <div className="flex flex-col gap-6 rounded-2xl border border-line bg-card p-6 shadow-[var(--shadow-sm)]">
             <SkillCheckboxList
               availableSkills={availableSkills}
               selectedSkills={config.skill_selection.common ?? []}
@@ -456,26 +466,37 @@ export default function App() {
       )}
 
       {view.name === "logs" && (
-        <section className="subpage">
+        <section className="flex flex-col gap-5">
           <SubpageHeader
             title={text.app.executionLog}
             backLabel={text.app.back}
             onBack={() => setView({ name: "main" })}
-            actions={<span className="panel-count">{logs.length} {text.app.entries}</span>}
+            actions={
+              <span className="inline-flex min-h-[30px] items-center rounded-full bg-primary-soft px-3 text-[0.8rem] font-bold text-primary">
+                {logs.length} {text.app.entries}
+              </span>
+            }
           />
-          <div className="log-list">
+          <div className="grid gap-3">
             {logs.length ? (
               logs.map((entry, index) => (
-                <div key={`${entry.ts}-${index}`} className={entry.level === "error" ? "log-entry error" : "log-entry"}>
-                  <div className="log-meta">
-                    <span className="log-time">{entry.ts}</span>
-                    <strong className="log-level">{entry.level}</strong>
+                <div
+                  key={`${entry.ts}-${index}`}
+                  className={`grid gap-2.5 rounded-xl border px-4 py-3.5 ${entry.level === "error" ? "border-danger-border bg-danger-bg" : "border-line bg-card"}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[0.8rem] font-semibold text-dim">{entry.ts}</span>
+                    <strong
+                      className={`inline-flex min-h-6 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[0.72rem] font-extrabold uppercase tracking-[0.04em] ${entry.level === "error" ? "bg-danger-border text-danger-text" : "bg-muted text-dim"}`}
+                    >
+                      {entry.level}
+                    </strong>
                   </div>
                   <code className="log-message">{entry.message}</code>
                 </div>
               ))
             ) : (
-              <p className="logs-empty">{text.app.emptyLog}</p>
+              <p className="m-0 py-8 text-center text-dim">{text.app.emptyLog}</p>
             )}
           </div>
         </section>
@@ -494,15 +515,15 @@ export default function App() {
       )}
 
       {view.name === "advanced" && config.endpoints[view.target] && (
-        <section className="subpage">
+        <section className="flex flex-col gap-5">
           <SubpageHeader
             title={`${config.endpoints[view.target].label || view.target} · ${text.app.advancedConfig}`}
             backLabel={text.app.back}
             onBack={() => setView({ name: "main" })}
           />
-          <div className="subpage-body">
-            <div className="settings-section">
-              <p className="settings-label">{text.app.mode}</p>
+          <div className="flex flex-col gap-6 rounded-2xl border border-line bg-card p-6 shadow-[var(--shadow-sm)]">
+            <div className="flex flex-col items-start gap-3">
+              <p className="m-0 text-base font-extrabold text-main">{text.app.mode}</p>
               <SegmentedControl<SyncMode>
                 ariaLabel={text.app.mode}
                 value={config.endpoints[view.target].mode}
@@ -515,8 +536,8 @@ export default function App() {
               />
             </div>
 
-            <div className="settings-section">
-              <p className="settings-label">{text.app.extraSkills}</p>
+            <div className="flex flex-col items-start gap-3">
+              <p className="m-0 text-base font-extrabold text-main">{text.app.extraSkills}</p>
               <SkillCheckboxList
                 availableSkills={availableSkills}
                 selectedSkills={config.skill_selection.extra[view.target] ?? []}
@@ -528,8 +549,8 @@ export default function App() {
               />
             </div>
 
-            <div className="settings-section">
-              <p className="settings-label">{text.app.excludeSkills}</p>
+            <div className="flex flex-col items-start gap-3">
+              <p className="m-0 text-base font-extrabold text-main">{text.app.excludeSkills}</p>
               <SkillCheckboxList
                 availableSkills={availableSkills}
                 selectedSkills={config.skill_selection.exclude[view.target] ?? []}
@@ -541,8 +562,8 @@ export default function App() {
               />
             </div>
 
-            <div className="settings-section">
-              <p className="settings-label">{text.app.replacements}（{sourceId} → {view.target}）</p>
+            <div className="flex flex-col items-start gap-3">
+              <p className="m-0 text-base font-extrabold text-main">{text.app.replacements}（{sourceId} → {view.target}）</p>
               <textarea
                 rows={8}
                 placeholder={text.app.replacementPlaceholder}
@@ -571,16 +592,16 @@ export default function App() {
 
       {confirmPlan && (
         <Modal title={text.app.confirmSyncTitle} kicker={text.app.runSync} closeLabel={text.app.close} onClose={() => setConfirmPlan(null)}>
-          <p className="field-label">{text.app.willSync}</p>
+          <p className="m-0 text-[0.9rem] font-bold text-main">{text.app.willSync}</p>
           {Array.from(confirmOperationsByTarget.entries()).map(([targetName, operations]) => {
             const summary = summarizeOperations(operations);
             return (
-              <div key={targetName} className="confirm-target">
-                <strong>{targetName}</strong>
-                <div className="preview-summary">
-                  <span className="preview-chip">{text.app.mdTarget} {summary.md}</span>
-                  <span className="preview-chip">{text.app.skillsDir} {summary.skills}</span>
-                  <span className="preview-chip">{text.app.docsDir} {summary.docs}</span>
+              <div key={targetName} className="flex flex-col gap-2">
+                <strong className="text-[0.95rem] text-main">{targetName}</strong>
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.mdTarget} {summary.md}</span>
+                  <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.skillsDir} {summary.skills}</span>
+                  <span className="rounded-lg border border-line bg-muted px-3 py-1 text-[0.74rem] font-bold text-main">{text.app.docsDir} {summary.docs}</span>
                 </div>
               </div>
             );
@@ -599,7 +620,7 @@ export default function App() {
 
           {!!confirmPlan.errors.length && <p className="muted">{text.app.previewHasErrors}</p>}
 
-          <div className="modal-actions">
+          <div className="mt-1 flex justify-end gap-3">
             <button type="button" className="secondary-action" onClick={() => setConfirmPlan(null)}>
               {text.app.cancel}
             </button>
@@ -612,10 +633,10 @@ export default function App() {
 
       {showHelp && (
         <Modal title={text.app.helpTitle} kicker={text.app.title} closeLabel={text.app.close} size="narrow" onClose={() => setShowHelp(false)}>
-          <p className="help-intro">{text.app.helpIntro}</p>
-          <ul className="help-list">
+          <p className="m-0 text-[0.95rem] font-semibold text-main">{text.app.helpIntro}</p>
+          <ul className="m-0 flex flex-col gap-2.5 pl-5">
             {text.app.helpPoints.map((point, index) => (
-              <li key={index}>{point}</li>
+              <li key={index} className="text-[0.88rem] leading-relaxed text-dim">{point}</li>
             ))}
           </ul>
         </Modal>
@@ -623,18 +644,18 @@ export default function App() {
 
       {syncNotice && (
         <Modal title={text.app.syncSuccessTitle} kicker={text.app.runSync} closeLabel={text.app.close} size="success" onClose={() => setSyncNotice(null)}>
-          <div className="success-summary">
-            <div className="success-card">
-              <span>{text.app.mdTarget}</span>
-              <strong>{syncNotice.md}</strong>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-1.5 rounded-xl border border-line bg-subtle p-4 text-center">
+              <span className="text-[0.78rem] font-bold text-dim">{text.app.mdTarget}</span>
+              <strong className="text-[1.3rem] font-extrabold text-main">{syncNotice.md}</strong>
             </div>
-            <div className="success-card">
-              <span>{text.app.skillsDir}</span>
-              <strong>{syncNotice.skills}</strong>
+            <div className="grid gap-1.5 rounded-xl border border-line bg-subtle p-4 text-center">
+              <span className="text-[0.78rem] font-bold text-dim">{text.app.skillsDir}</span>
+              <strong className="text-[1.3rem] font-extrabold text-main">{syncNotice.skills}</strong>
             </div>
-            <div className="success-card">
-              <span>{text.app.docsDir}</span>
-              <strong>{syncNotice.docs}</strong>
+            <div className="grid gap-1.5 rounded-xl border border-line bg-subtle p-4 text-center">
+              <span className="text-[0.78rem] font-bold text-dim">{text.app.docsDir}</span>
+              <strong className="text-[1.3rem] font-extrabold text-main">{syncNotice.docs}</strong>
             </div>
           </div>
         </Modal>

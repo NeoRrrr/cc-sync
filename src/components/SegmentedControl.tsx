@@ -3,7 +3,7 @@ export type SegmentOption<T extends string> = {
   label: string;
 };
 
-/* cc-switch 风格的分段控件：替代原生 <select>，激活项蓝色实心。 */
+/* cc-switch 风格的分段控件：替代原生 <select>，激活项实心强调色。 */
 export function SegmentedControl<T extends string>({
   value,
   options,
@@ -16,16 +16,19 @@ export function SegmentedControl<T extends string>({
   ariaLabel?: string;
 }) {
   return (
-    <div className="segmented" role="group" aria-label={ariaLabel}>
+    <div role="group" aria-label={ariaLabel} className="inline-flex gap-1 rounded-xl border border-line bg-muted p-1">
       {options.map((option) => {
         const active = option.value === value;
         return (
           <button
             key={option.value}
             type="button"
-            className={active ? "segmented-item active" : "segmented-item"}
             aria-pressed={active}
             onClick={() => onChange(option.value)}
+            className={[
+              "rounded-[9px] border-0 px-4 py-[7px] text-[0.85rem] font-bold transition-colors",
+              active ? "bg-primary text-white shadow-sm" : "bg-transparent text-dim hover:text-main",
+            ].join(" ")}
           >
             {option.label}
           </button>

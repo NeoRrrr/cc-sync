@@ -13,12 +13,17 @@ export function SubpageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="subpage-head">
-      <button type="button" className="back-btn" onClick={onBack} aria-label={backLabel}>
+    <div className="flex items-center gap-[14px]">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label={backLabel}
+        className="grid h-10 w-10 place-items-center rounded-xl border border-line bg-card p-0 text-[1.15rem] text-main transition-colors hover:border-line-strong hover:bg-muted"
+      >
         <span aria-hidden="true">←</span>
       </button>
-      <h2 className="subpage-title">{title}</h2>
-      {actions ? <div className="subpage-actions">{actions}</div> : null}
+      <h2 className="m-0 flex-1 text-[1.4rem] font-extrabold text-main">{title}</h2>
+      {actions ? <div className="flex items-center gap-[10px]">{actions}</div> : null}
     </div>
   );
 }
