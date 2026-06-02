@@ -17,15 +17,16 @@ SCHEMA_VERSION = 3
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": SCHEMA_VERSION,
-    "project_root": ".",
+    "project_root": "",
+    "workspaces": [],
     "overwrite_md": True,
     "fallback_to_copy": True,
     "verbose": True,
     # 输入源集合：md 按顺序合并，skills/docs 按直接子项名称去重（同名保留第一个）。
     "sources": {
-        "md_files": ["CLAUDE.md", ".claude/CLAUDE.local.md", ".claude/claude.local.md"],
-        "skills_dirs": [".claude/skills", "tools/AI/claude/skills"],
-        "docs_dirs": [".claude/docs", "tools/AI/claude/docs"],
+        "md_files": [],
+        "skills_dirs": [],
+        "docs_dirs": [],
     },
     # 每个 agent 都是一个输出目标端点。dir/name 用于显示与默认替换推导；已有替换以 replacements 为准。
     "endpoints": {
@@ -34,9 +35,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "dir": ".claude",
             "name": "Claude Code",
             "md": "CLAUDE.md",
-            "md_local_candidates": [".claude/CLAUDE.local.md", ".claude/claude.local.md"],
-            "skills_dirs": [".claude/skills", "tools/AI/claude/skills"],
-            "docs_dirs": [".claude/docs", "tools/AI/claude/docs"],
+            "md_local_candidates": [],
+            "skills_dirs": [],
+            "docs_dirs": [],
             "mode": "junction",
         },
         "codex": {
@@ -45,8 +46,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "Codex",
             "md": "AGENTS.md",
             "md_local_candidates": [],
-            "skills_dirs": [".codex/skills"],
-            "docs_dirs": [".codex/docs"],
+            "skills_dirs": [],
+            "docs_dirs": [],
             "mode": "junction",
         },
         "gemini": {
@@ -55,18 +56,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "Gemini",
             "md": "GEMINI.md",
             "md_local_candidates": [],
-            "skills_dirs": [".gemini/skills"],
-            "docs_dirs": [".gemini/docs"],
+            "skills_dirs": [],
+            "docs_dirs": [],
             "mode": "junction",
         },
     },
     # 当前同步目标。
     "sync": {
-        "targets": ["codex", "gemini"],
+        "targets": ["codex"],
     },
     # 技能选择：通用 + 该目标 extra − 该目标 exclude（语义与旧版一致，仅换键）。
     "skill_selection": {
-        "common": ["act-dev", "video-expert", "xlocust-smoke"],
+        "common": [],
         "extra": {"codex": [], "gemini": []},
         "exclude": {"codex": [], "gemini": []},
     },
@@ -86,6 +87,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "CLAUDE.local.md": "GEMINI.md",
             "claude.local.md": "GEMINI.md",
         },
+    },
+    "preferences": {
+        "close_to_tray": False,
     },
     # runtime.* 仅供 Rust 桌面启动器读取（python_executable / script_path），本引擎不读取。
     "runtime": {
@@ -212,6 +216,7 @@ def migrate_legacy(loaded: dict[str, Any], config_base: Path) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "project_root": cfg.get("project_root", "."),
+        "workspaces": cfg.get("workspaces", []),
         "overwrite_md": cfg.get("overwrite_md", True),
         "fallback_to_copy": cfg.get("fallback_to_copy", True),
         "verbose": cfg.get("verbose", True),
@@ -228,6 +233,7 @@ def migrate_legacy(loaded: dict[str, Any], config_base: Path) -> dict[str, Any]:
             "exclude": cfg.get("target_exclude_skills", {}),
         },
         "replacements": replacements,
+        "preferences": cfg.get("preferences", {}),
         "runtime": cfg.get("runtime", {}),
     }
 
@@ -242,6 +248,7 @@ def migrate_v2(loaded: dict[str, Any], config_base: Path) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "project_root": cfg.get("project_root", "."),
+        "workspaces": cfg.get("workspaces", []),
         "overwrite_md": cfg.get("overwrite_md", True),
         "fallback_to_copy": cfg.get("fallback_to_copy", True),
         "verbose": cfg.get("verbose", True),
@@ -257,6 +264,7 @@ def migrate_v2(loaded: dict[str, Any], config_base: Path) -> dict[str, Any]:
         "sync": {"targets": cfg.get("sync", {}).get("targets", [])},
         "skill_selection": cfg.get("skill_selection", {}),
         "replacements": _target_replacements_from_pairs(cfg.get("replacements", {})),
+        "preferences": cfg.get("preferences", {}),
         "runtime": cfg.get("runtime", {}),
     }
 

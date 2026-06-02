@@ -13,6 +13,8 @@ export function SettingsView({
   onLanguage,
   theme,
   onTheme,
+  closeToTray,
+  onCloseToTray,
   version,
   onBack,
 }: {
@@ -21,6 +23,8 @@ export function SettingsView({
   onLanguage: (next: Language) => void;
   theme: Theme;
   onTheme: (next: Theme) => void;
+  closeToTray: boolean;
+  onCloseToTray: (next: boolean) => void;
   version: string;
   onBack: () => void;
 }) {
@@ -81,6 +85,20 @@ export function SettingsView({
               ]}
             />
           </div>
+
+          <label className="flex w-full items-start gap-3 rounded-xl border border-line bg-subtle p-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-[18px] w-[18px] shrink-0"
+              checked={closeToTray}
+              onChange={(event) => onCloseToTray(event.target.checked)}
+            />
+            <span className="grid gap-1">
+              <span className="text-base font-extrabold text-main">{text.app.closeBehavior}</span>
+              <span className="text-[0.85rem] text-dim">{text.app.closeBehaviorHint}</span>
+              <span className="text-[0.85rem] font-bold text-main">{text.app.minimizeOnClose}</span>
+            </span>
+          </label>
         </div>
       )}
 

@@ -1,5 +1,18 @@
 import { startTransition, useEffect, useRef, useState } from "react";
-import { getAvailableSkills, listTargetSkills, loadConfig, openPath, pickFile, pickFolder, previewSync, runSync, saveConfig } from "./lib/client";
+import {
+  exitApp,
+  getAvailableSkills,
+  hideMainWindow,
+  listTargetSkills,
+  listenCloseRequested,
+  loadConfig,
+  openPath,
+  pickFile,
+  pickFolder,
+  previewSync,
+  runSync,
+  saveConfig,
+} from "./lib/client";
 import { dictionaries, loadLanguage, saveLanguage, type Language } from "./i18n";
 import { applyTheme, loadTheme, saveTheme, watchSystemTheme, type Theme } from "./theme";
 import type { ActivityLog, AvailableSkillOption, Endpoint, PlanOperation, SourceConfig, SyncConfig, SyncMode, SyncPlan, SyncScope, TargetSkill } from "./types";
@@ -11,7 +24,32 @@ import { EndpointCard } from "./components/EndpointCard";
 import { SettingsView } from "./components/SettingsView";
 import { GearIcon, InfoIcon } from "./components/icons";
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.1.1";
+
+const WORKSPACE_DEFAULT_SOURCES: SourceConfig = {
+  md_files: [],
+  skills_dirs: [],
+  docs_dirs: [],
+};
+
+const WORKSPACE_DEFAULT_ENDPOINTS: Record<string, Partial<Endpoint>> = {
+  claude: {
+    md: "CLAUDE.md",
+    md_local_candidates: [".claude/CLAUDE.local.md", ".claude/claude.local.md"],
+    skills_dirs: [".claude/skills"],
+    docs_dirs: [".claude/docs"],
+  },
+  codex: {
+    md: "AGENTS.md",
+    skills_dirs: [".codex/skills"],
+    docs_dirs: [".codex/docs"],
+  },
+  gemini: {
+    md: "GEMINI.md",
+    skills_dirs: [".gemini/skills"],
+    docs_dirs: [".gemini/docs"],
+  },
+};
 
 type View =
   | { name: "main" }
@@ -35,6 +73,79 @@ function appendLog(
 
 function sourceSkillDirs(config: SyncConfig): string[] {
   return config.sources.skills_dirs ?? [];
+}
+
+function uniquePaths(paths: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const path of paths) {
+    const trimmed = path?.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function normalizeConfig(config: SyncConfig): SyncConfig {
+  const projectRoot = config.project_root ?? "";
+  return {
+    ...config,
+    project_root: projectRoot,
+    workspaces: uniquePaths([projectRoot, ...(config.workspaces ?? [])]),
+    sources: {
+      md_files: config.sources?.md_files ?? [],
+      skills_dirs: config.sources?.skills_dirs ?? [],
+      docs_dirs: config.sources?.docs_dirs ?? [],
+    },
+    preferences: {
+      ...(config.preferences ?? {}),
+      close_to_tray: config.preferences?.close_to_tray ?? false,
+    },
+  };
+}
+
+function setWorkspace(config: SyncConfig, workspace: string): SyncConfig {
+  const trimmed = workspace.trim();
+  return {
+    ...config,
+    project_root: trimmed,
+    workspaces: uniquePaths([trimmed, ...(config.workspaces ?? [])]),
+  };
+}
+
+function fillEmptyWorkspaceDefaults(config: SyncConfig): SyncConfig {
+  const endpoints = Object.fromEntries(
+    Object.entries(config.endpoints).map(([endpointId, endpoint]) => {
+      const defaults = WORKSPACE_DEFAULT_ENDPOINTS[endpointId] ?? {};
+      return [
+        endpointId,
+        {
+          ...endpoint,
+          md: endpoint.md || defaults.md || "",
+          md_local_candidates: endpoint.md_local_candidates.length ? endpoint.md_local_candidates : defaults.md_local_candidates ?? [],
+          skills_dirs: endpoint.skills_dirs.length ? endpoint.skills_dirs : defaults.skills_dirs ?? [],
+          docs_dirs: endpoint.docs_dirs.length ? endpoint.docs_dirs : defaults.docs_dirs ?? [],
+        },
+      ];
+    })
+  ) as Record<string, Endpoint>;
+
+  return {
+    ...config,
+    sources: {
+      md_files: config.sources.md_files.length ? config.sources.md_files : WORKSPACE_DEFAULT_SOURCES.md_files,
+      skills_dirs: config.sources.skills_dirs.length ? config.sources.skills_dirs : WORKSPACE_DEFAULT_SOURCES.skills_dirs,
+      docs_dirs: config.sources.docs_dirs.length ? config.sources.docs_dirs : WORKSPACE_DEFAULT_SOURCES.docs_dirs,
+    },
+    endpoints,
+  };
+}
+
+function setWorkspaceAndFillDefaults(config: SyncConfig, workspace: string): SyncConfig {
+  return fillEmptyWorkspaceDefaults(setWorkspace(config, workspace));
 }
 
 /* 按目标聚合同步计划。 */
@@ -109,6 +220,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [showHelp, setShowHelp] = useState(false);
+  const [showWorkspacePrompt, setShowWorkspacePrompt] = useState(false);
+  const [closeDialog, setCloseDialog] = useState<{ remember: boolean } | null>(null);
   const [syncNotice, setSyncNotice] = useState<{ md: number; skills: number; docs: number } | null>(null);
   const [saveNotice, setSaveNotice] = useState<{ level: "success" | "error"; message: string } | null>(null);
   const [availableSkills, setAvailableSkills] = useState<AvailableSkillOption[]>([]);
@@ -120,10 +233,11 @@ export default function App() {
     docs_dirs: "",
   });
   const text = dictionaries[language];
+  const configRef = useRef<SyncConfig | null>(null);
 
   async function refreshAvailableSkills(cfg: SyncConfig) {
     try {
-      const skills = await getAvailableSkills(sourceSkillDirs(cfg));
+      const skills = cfg.project_root.trim() ? await getAvailableSkills(sourceSkillDirs(cfg), cfg) : [];
       setAvailableSkills(skills);
       appendLog(setLogs, "info", `cc-sync loaded ${skills.length} skills`);
     } catch (err) {
@@ -133,10 +247,14 @@ export default function App() {
 
   /* 扫描每个端点 skills 目录的磁盘真实状态。 */
   async function refreshDiskSkills(cfg: SyncConfig) {
+    if (!cfg.project_root.trim()) {
+      setDiskSkills({});
+      return;
+    }
     const pairs = await Promise.all(
       Object.keys(cfg.endpoints).map(async (endpointId) => {
         try {
-          return [endpointId, await listTargetSkills(endpointId)] as const;
+          return [endpointId, await listTargetSkills(endpointId, cfg)] as const;
         } catch {
           return [endpointId, [] as TargetSkill[]] as const;
         }
@@ -149,16 +267,47 @@ export default function App() {
     void (async () => {
       try {
         const loaded = await loadConfig();
-        setConfig(loaded.config);
+        const normalized = normalizeConfig(loaded.config);
+        setConfig(normalized);
         setMode(loaded.mode);
+        setShowWorkspacePrompt(!normalized.project_root.trim());
         appendLog(setLogs, "info", text.logs.configLoaded(loaded.mode));
-        void refreshDiskSkills(loaded.config);
-        void refreshAvailableSkills(loaded.config);
+        void refreshDiskSkills(normalized);
+        void refreshAvailableSkills(normalized);
       } catch (error) {
         appendLog(setLogs, "error", text.logs.loadFailed(String(error)));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenCloseRequested(() => {
+      const current = configRef.current;
+      if (current?.preferences.close_to_tray) {
+        void hideMainWindow();
+      } else {
+        setCloseDialog({ remember: false });
+      }
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   /* 主题：应用到 <html>、持久化、跟随系统。 */
@@ -188,12 +337,12 @@ export default function App() {
 
   /* 只有浮层需要锁滚动。 */
   useEffect(() => {
-    const open = Boolean(confirmPlan || syncNotice || saveNotice || showHelp);
+    const open = Boolean(confirmPlan || syncNotice || saveNotice || showHelp || showWorkspacePrompt || closeDialog);
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [confirmPlan, syncNotice, saveNotice, showHelp]);
+  }, [confirmPlan, syncNotice, saveNotice, showHelp, showWorkspacePrompt, closeDialog]);
 
   useEffect(() => {
     if (!saveNotice || saveNotice.level !== "success") {
@@ -232,12 +381,72 @@ export default function App() {
     try {
       const picked = await pickFolder(config?.project_root);
       if (picked) {
-        setConfig((current) => (current ? { ...current, project_root: picked } : current));
+        setConfig((current) => {
+          if (!current) return current;
+          const next = setWorkspaceAndFillDefaults(current, picked);
+          void refreshAvailableSkills(next);
+          void refreshDiskSkills(next);
+          return next;
+        });
+        setShowWorkspacePrompt(false);
         appendLog(setLogs, "info", `cc-sync workspace set: ${picked}`);
       }
     } catch (error) {
       appendLog(setLogs, "error", `cc-sync pick folder failed: ${String(error)}`);
     }
+  }
+
+  function switchWorkspace(path: string) {
+    setConfig((current) => {
+      if (!current) return current;
+      const next = setWorkspaceAndFillDefaults(current, path);
+      void refreshAvailableSkills(next);
+      void refreshDiskSkills(next);
+      return next;
+    });
+    appendLog(setLogs, "info", `cc-sync workspace switched: ${path}`);
+  }
+
+  function deleteCurrentWorkspace() {
+    setConfig((current) => {
+      if (!current) return current;
+      const nextWorkspaces = (current.workspaces ?? []).filter((path) => path !== current.project_root);
+      const nextProjectRoot = nextWorkspaces[0] ?? "";
+      if (!nextProjectRoot) {
+        setShowWorkspacePrompt(true);
+      }
+      const next = {
+        ...current,
+        project_root: nextProjectRoot,
+        workspaces: nextWorkspaces,
+      };
+      void refreshAvailableSkills(next);
+      void refreshDiskSkills(next);
+      return next;
+    });
+  }
+
+  function setCloseToTrayPreference(value: boolean) {
+    setConfig((current) =>
+      current
+        ? {
+            ...current,
+            preferences: { ...current.preferences, close_to_tray: value },
+          }
+        : current
+    );
+  }
+
+  async function handleMinimizeToTray() {
+    if (closeDialog?.remember) {
+      setCloseToTrayPreference(true);
+    }
+    setCloseDialog(null);
+    await hideMainWindow();
+  }
+
+  async function handleExitApp() {
+    await exitApp();
   }
 
   async function openLocation(path: string, label: string) {
@@ -250,6 +459,11 @@ export default function App() {
   }
 
   async function handlePreview() {
+    if (!config?.project_root.trim()) {
+      appendLog(setLogs, "error", text.app.workspaceRequired);
+      setShowWorkspacePrompt(true);
+      return;
+    }
     setBusy(true);
     setSyncNotice(null);
     setConfirmPlan(null);
@@ -274,6 +488,11 @@ export default function App() {
   }
 
   async function handleConfirmRun() {
+    if (!config?.project_root.trim()) {
+      appendLog(setLogs, "error", text.app.workspaceRequired);
+      setShowWorkspacePrompt(true);
+      return;
+    }
     setBusy(true);
     appendLog(setLogs, "info", text.logs.syncRequested(scope));
     try {
@@ -315,10 +534,12 @@ export default function App() {
   function updateEndpoint(endpointId: string, patch: Partial<Endpoint>) {
     setConfig((current) => {
       if (!current) return current;
-      return {
+      const next = {
         ...current,
         endpoints: { ...current.endpoints, [endpointId]: { ...current.endpoints[endpointId], ...patch } },
       };
+      void refreshDiskSkills(next);
+      return next;
     });
   }
 
@@ -383,6 +604,8 @@ export default function App() {
   }
 
   const activeConfig = config;
+  const hasWorkspace = Boolean(config.project_root.trim());
+  const workspaceChoices = uniquePaths([config.project_root, ...(config.workspaces ?? [])]);
   const endpointEntries = Object.entries(config.endpoints) as Array<[string, Endpoint]>;
   const targetEntries = endpointEntries;
   const operationsByTarget = groupOperationsByTarget(plan);
@@ -415,10 +638,10 @@ export default function App() {
                 <code className="source-path-value" title={value}>
                   {value}
                 </code>
-                <button type="button" className="mini-action source-action" onClick={() => void openLocation(value, title)}>
+                <button type="button" className="mini-action source-action" onClick={() => void openLocation(value, title)} disabled={!hasWorkspace}>
                   {text.app.openLocation}
                 </button>
-                <button type="button" className="mini-action source-action" onClick={() => updateSourceList(kind, values.filter((_, i) => i !== index))}>
+                <button type="button" className="mini-action source-action" onClick={() => updateSourceList(kind, values.filter((_, i) => i !== index))} disabled={!hasWorkspace}>
                   {text.app.remove}
                 </button>
               </div>
@@ -433,6 +656,7 @@ export default function App() {
             value={sourceDrafts[kind]}
             placeholder={text.app.pathPlaceholder}
             onChange={(event) => setSourceDrafts((current) => ({ ...current, [kind]: event.target.value }))}
+            disabled={!hasWorkspace}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -440,10 +664,10 @@ export default function App() {
               }
             }}
           />
-          <button type="button" className="mini-action source-action" title={pickTitle} onClick={() => void chooseSourcePath(kind)}>
+          <button type="button" className="mini-action source-action" title={pickTitle} onClick={() => void chooseSourcePath(kind)} disabled={!hasWorkspace}>
             {text.app.chooseFolder}
           </button>
-          <button type="button" className="mini-action source-action" onClick={() => addSourcePath(kind, sourceDrafts[kind])}>
+          <button type="button" className="mini-action source-action" onClick={() => addSourcePath(kind, sourceDrafts[kind])} disabled={!hasWorkspace}>
             {text.app.add}
           </button>
         </div>
@@ -466,16 +690,16 @@ export default function App() {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <button type="button" className="utility-action" onClick={() => setView({ name: "sources" })}>
+              <button type="button" className="utility-action" onClick={() => setView({ name: "sources" })} disabled={!hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
                 {text.app.inputSources}
               </button>
-              <button type="button" className="utility-action" onClick={() => setView({ name: "commonSkills" })}>
+              <button type="button" className="utility-action" onClick={() => setView({ name: "commonSkills" })} disabled={!hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
                 {text.app.commonSkills}
               </button>
               <button type="button" className="utility-action" onClick={() => setView({ name: "logs" })}>
                 {text.app.executionLog}
               </button>
-              <button type="button" className="primary-action" onClick={handlePreview} disabled={busy}>
+              <button type="button" className="primary-action" onClick={handlePreview} disabled={busy || !hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
                 {text.app.runSync}
               </button>
             </div>
@@ -484,17 +708,31 @@ export default function App() {
           <section className="flex flex-wrap items-end gap-7 rounded-2xl border border-line bg-card px-6 py-5 shadow-[var(--shadow-sm)] max-md:flex-col max-md:items-stretch">
             <label className="flex min-w-[300px] flex-1 flex-col gap-2.5">
               <span className={fieldLabel}>{text.app.workspace}</span>
-              <div className="flex items-center gap-2.5">
-                <input
-                  className="flex-1"
+              <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2.5 max-md:grid-cols-1">
+                <select
+                  className="min-w-0"
                   title={text.app.workspaceHint}
                   value={config.project_root}
-                  onChange={(event) => setConfig((current) => (current ? { ...current, project_root: event.target.value } : current))}
-                />
+                  onChange={(event) => switchWorkspace(event.target.value)}
+                  disabled={!workspaceChoices.length}
+                >
+                  {workspaceChoices.length ? (
+                    workspaceChoices.map((path) => (
+                      <option key={path} value={path}>
+                        {path}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">{text.app.noWorkspaces}</option>
+                  )}
+                </select>
                 <button type="button" className="mini-action" onClick={() => void chooseWorkspace()}>
                   {text.app.chooseFolder}
                 </button>
-                <button type="button" className="mini-action" onClick={() => void openLocation(config.project_root, text.app.workspace)}>
+                <button type="button" className="mini-action" onClick={deleteCurrentWorkspace} disabled={!config.project_root}>
+                  {text.app.remove}
+                </button>
+                <button type="button" className="mini-action" onClick={() => void openLocation(config.project_root, text.app.workspace)} disabled={!config.project_root}>
                   {text.app.openLocation}
                 </button>
               </div>
@@ -505,6 +743,7 @@ export default function App() {
                 ariaLabel={text.app.scope}
                 value={scope}
                 onChange={setScope}
+                disabled={!hasWorkspace}
                 options={[
                   { value: "all", label: "all" },
                   { value: "md", label: "md" },
@@ -539,7 +778,7 @@ export default function App() {
           >
             <div className="flex items-center justify-between gap-3">
               <span className={fieldLabel}>{text.app.inputSources}</span>
-              <button type="button" className="mini-action" onClick={() => setView({ name: "sources" })}>
+              <button type="button" className="mini-action" onClick={() => setView({ name: "sources" })} disabled={!hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
                 {text.app.configure}
               </button>
             </div>
@@ -565,7 +804,7 @@ export default function App() {
           >
             <div className="flex items-center justify-between gap-3">
               <span className={fieldLabel}>{text.app.activeCommonSkills}</span>
-              <button type="button" className="mini-action" onClick={() => setView({ name: "commonSkills" })}>
+              <button type="button" className="mini-action" onClick={() => setView({ name: "commonSkills" })} disabled={!hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
                 {text.app.commonSkills}
               </button>
             </div>
@@ -596,6 +835,7 @@ export default function App() {
                   summary={summarizeOperations(targetOperations)}
                   hasSyncResult={targetOperations.length > 0}
                   text={text}
+                  disabled={!hasWorkspace}
                   onToggleTarget={(checked) => toggleTarget(endpointId, checked)}
                   onOpen={(path, label) => void openLocation(path, label)}
                   onAdvanced={() => setView({ name: "advanced", target: endpointId })}
@@ -676,6 +916,8 @@ export default function App() {
           onLanguage={setLanguage}
           theme={theme}
           onTheme={setTheme}
+          closeToTray={config.preferences.close_to_tray}
+          onCloseToTray={setCloseToTrayPreference}
           version={APP_VERSION}
           onBack={() => setView({ name: "main" })}
         />
@@ -815,6 +1057,60 @@ export default function App() {
               <li key={index} className="text-[0.88rem] leading-relaxed text-dim">{point}</li>
             ))}
           </ul>
+        </Modal>
+      )}
+
+      {showWorkspacePrompt && !config.project_root.trim() && (
+        <Modal
+          title={text.app.firstRunWorkspaceTitle}
+          kicker={text.app.workspaces}
+          closeLabel={text.app.skipForNow}
+          showHeaderClose={false}
+          size="narrow"
+          onClose={() => setShowWorkspacePrompt(false)}
+        >
+          <p className="m-0 text-[0.95rem] font-semibold text-main">{text.app.firstRunWorkspaceIntro}</p>
+          <div className="flex flex-wrap justify-end gap-3">
+            <button type="button" className="secondary-action" onClick={() => setShowWorkspacePrompt(false)}>
+              {text.app.skipForNow}
+            </button>
+            <button type="button" className="primary-action" onClick={() => void chooseWorkspace()}>
+              {text.app.chooseWorkspaceNow}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {closeDialog && (
+        <Modal
+          title={text.app.closeAppTitle}
+          kicker={text.app.close}
+          closeLabel={text.app.cancel}
+          showHeaderClose={false}
+          size="narrow"
+          onClose={() => setCloseDialog(null)}
+        >
+          <p className="m-0 text-[0.95rem] font-semibold text-main">{text.app.closeAppIntro}</p>
+          <label className="flex items-start gap-3 rounded-xl border border-line bg-subtle p-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-[18px] w-[18px] shrink-0"
+              checked={closeDialog.remember}
+              onChange={(event) => setCloseDialog((current) => (current ? { ...current, remember: event.target.checked } : current))}
+            />
+            <span className="text-[0.9rem] font-bold text-main">{text.app.rememberMinimizeOnClose}</span>
+          </label>
+          <div className="flex flex-wrap justify-end gap-3">
+            <button type="button" className="secondary-action" onClick={() => setCloseDialog(null)}>
+              {text.app.cancel}
+            </button>
+            <button type="button" className="secondary-action" onClick={() => void handleExitApp()}>
+              {text.app.exitApplication}
+            </button>
+            <button type="button" className="primary-action" onClick={() => void handleMinimizeToTray()}>
+              {text.app.minimizeToTray}
+            </button>
+          </div>
         </Modal>
       )}
 

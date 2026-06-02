@@ -16,6 +16,14 @@ async function invoke<T>(command: string, args?: Record<string, unknown>) {
   return invoke<T>(command, args);
 }
 
+export async function listenCloseRequested(handler: () => void): Promise<() => void> {
+  if (!inTauri()) {
+    return () => {};
+  }
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen("cc-sync-close-requested", handler);
+}
+
 export async function loadConfig(): Promise<{ config: SyncConfig; mode: "desktop" | "demo" }> {
   if (!inTauri()) {
     return { config: structuredClone(mockConfig), mode: "demo" };
@@ -35,6 +43,20 @@ export async function saveConfig(config: SyncConfig): Promise<void> {
   }
 
   await invoke("save_config_data", { config });
+}
+
+export async function hideMainWindow(): Promise<void> {
+  if (!inTauri()) {
+    return;
+  }
+  await invoke("hide_main_window");
+}
+
+export async function exitApp(): Promise<void> {
+  if (!inTauri()) {
+    return;
+  }
+  await invoke("exit_app");
 }
 
 /* dry-run 预览：返回将要执行的计划但不写盘。 */
@@ -80,15 +102,15 @@ export async function openPath(path: string): Promise<void> {
 }
 
 /* 列出某个 target 的 skills 目录里实际存在的技能及其磁盘状态(链接/复制/失效)。 */
-export async function listTargetSkills(target: string): Promise<TargetSkill[]> {
+export async function listTargetSkills(target: string, config?: SyncConfig): Promise<TargetSkill[]> {
   if (!inTauri()) {
     return [];
   }
-  return invoke<TargetSkill[]>("list_target_skills", { target });
+  return invoke<TargetSkill[]>("list_target_skills", { target, config });
 }
 
 /* 扫描给定源技能目录里有哪些可选技能（dirs = 当前源端点的 skills_dirs）。 */
-export async function getAvailableSkills(dirs: string[]): Promise<AvailableSkillOption[]> {
+export async function getAvailableSkills(dirs: string[], config?: SyncConfig): Promise<AvailableSkillOption[]> {
   if (!inTauri()) {
     return [
       {
@@ -118,5 +140,5 @@ export async function getAvailableSkills(dirs: string[]): Promise<AvailableSkill
     ];
   }
 
-  return invoke<AvailableSkillOption[]>("list_available_skills", { dirs });
+  return invoke<AvailableSkillOption[]>("list_available_skills", { dirs, config });
 }

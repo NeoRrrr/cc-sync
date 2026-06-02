@@ -36,9 +36,14 @@ export type SkillSelection = {
   exclude: Record<string, string[]>;
 };
 
+export type PreferencesConfig = {
+  close_to_tray: boolean;
+};
+
 export type SyncConfig = {
   schema_version: number;
   project_root: string;
+  workspaces: string[];
   overwrite_md: boolean;
   fallback_to_copy: boolean;
   verbose: boolean;
@@ -47,6 +52,7 @@ export type SyncConfig = {
   sync: SyncSpec;
   skill_selection: SkillSelection;
   replacements: Record<string, Record<string, string>>;
+  preferences: PreferencesConfig;
   runtime: RuntimeConfig;
 };
 

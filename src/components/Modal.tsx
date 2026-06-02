@@ -13,6 +13,7 @@ export function Modal({
   onClose,
   size,
   closeLabel,
+  showHeaderClose = true,
   children,
   footer,
 }: {
@@ -21,6 +22,7 @@ export function Modal({
   onClose: () => void;
   size?: "narrow" | "success" | "toast";
   closeLabel: string;
+  showHeaderClose?: boolean;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
@@ -57,13 +59,15 @@ export function Modal({
             {kicker ? <p className="m-0 text-[0.78rem] font-bold uppercase tracking-[0.05em] text-dim">{kicker}</p> : null}
             <h2 className="m-0 text-2xl font-extrabold tracking-[-0.02em] text-main">{title}</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-muted px-4 py-2 text-[0.85rem] font-bold text-main transition-colors hover:bg-line hover:text-danger"
-          >
-            {closeLabel}
-          </button>
+          {showHeaderClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl bg-muted px-4 py-2 text-[0.85rem] font-bold text-main transition-colors hover:bg-line hover:text-danger"
+            >
+              {closeLabel}
+            </button>
+          ) : null}
         </div>
         {children ? <div className="flex flex-col gap-4 px-7 pb-7 pt-6">{children}</div> : null}
         {footer}

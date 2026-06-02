@@ -9,11 +9,13 @@ export function SegmentedControl<T extends string>({
   options,
   onChange,
   ariaLabel,
+  disabled = false,
 }: {
   value: T;
   options: SegmentOption<T>[];
   onChange: (next: T) => void;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <div role="group" aria-label={ariaLabel} className="inline-flex gap-1 rounded-xl border border-line bg-muted p-1">
@@ -25,6 +27,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(option.value)}
+            disabled={disabled}
             className={[
               "rounded-[9px] border-0 px-4 py-[7px] text-[0.85rem] font-bold transition-colors",
               active ? "bg-primary text-white shadow-sm" : "bg-transparent text-dim hover:text-main",

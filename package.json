@@ -1,6 +1,6 @@
 {
   "name": "cc-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local desktop GUI for merging agent Markdown, docs, and skills into multiple agent targets.",
   "private": true,
   "type": "module",

@@ -22,6 +22,7 @@ export function EndpointCard({
   summary,
   hasSyncResult,
   text,
+  disabled = false,
   onToggleTarget,
   onOpen,
   onAdvanced,
@@ -34,6 +35,7 @@ export function EndpointCard({
   summary: { md: number; skills: number; docs: number };
   hasSyncResult: boolean;
   text: Dictionary;
+  disabled?: boolean;
   onToggleTarget: (checked: boolean) => void;
   onOpen: (path: string, label: string) => void;
   onAdvanced: () => void;
@@ -89,8 +91,14 @@ export function EndpointCard({
           </div>
           <h3 className="m-0 text-[1.1rem] font-extrabold text-main">{endpoint.label || id}</h3>
         </div>
-        <label className="flex cursor-pointer items-center gap-2">
-          <input type="checkbox" checked={isTarget} onChange={(event) => onToggleTarget(event.target.checked)} className="h-4 w-4 cursor-pointer" />
+        <label className={`flex items-center gap-2 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
+          <input
+            type="checkbox"
+            checked={isTarget}
+            onChange={(event) => onToggleTarget(event.target.checked)}
+            className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
+            disabled={disabled}
+          />
           <span className="text-[0.82rem] font-bold text-dim">{isTarget ? text.app.syncTarget : text.app.notSyncTarget}</span>
         </label>
       </header>
@@ -110,19 +118,22 @@ export function EndpointCard({
       )}
 
       <div className="flex flex-col">
-        {paths.map((path) => (
-          <div key={path.key} className="border-t border-line py-[11px] first:border-t-0 first:pt-0">
-            <span className="mb-1.5 block text-[0.7rem] font-bold uppercase tracking-[0.04em] text-dim">{path.label}</span>
-            <div className="flex items-center justify-between gap-2.5">
-              <code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent text-[0.8rem] text-main [font-family:var(--font-mono)]" title={path.value}>
-                {compactPath(path.value)}
-              </code>
-              <button type="button" className="mini-action" onClick={() => onOpen(path.value, `${id}-${path.label}`)}>
-                {text.app.openLocation}
-              </button>
+        {paths.map((path) => {
+          const hasPath = Boolean(path.value.trim());
+          return (
+            <div key={path.key} className="border-t border-line py-[11px] first:border-t-0 first:pt-0">
+              <span className="mb-1.5 block text-[0.7rem] font-bold uppercase tracking-[0.04em] text-dim">{path.label}</span>
+              <div className="flex items-center justify-between gap-2.5">
+                <code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent text-[0.8rem] text-main [font-family:var(--font-mono)]" title={path.value}>
+                  {compactPath(path.value)}
+                </code>
+                <button type="button" className="mini-action" onClick={() => onOpen(path.value, `${id}-${path.label}`)} disabled={disabled || !hasPath}>
+                  {text.app.openLocation}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="grid gap-2">
@@ -142,7 +153,7 @@ export function EndpointCard({
       </div>
 
       <div className="flex justify-end">
-        <button type="button" className="ghost" onClick={onAdvanced}>
+        <button type="button" className="ghost" onClick={onAdvanced} disabled={disabled}>
           {text.app.advancedConfig}
         </button>
       </div>

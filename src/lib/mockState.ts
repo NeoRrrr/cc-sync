@@ -3,14 +3,15 @@ import type { SyncConfig } from "../types";
 /* 非桌面(浏览器 demo)模式下展示用的示例配置(v3 输入源集合模型)。 */
 export const mockConfig: SyncConfig = {
   schema_version: 3,
-  project_root: ".",
+  project_root: "",
+  workspaces: [],
   overwrite_md: true,
   fallback_to_copy: true,
   verbose: true,
   sources: {
-    md_files: ["CLAUDE.md", ".claude/CLAUDE.local.md"],
-    skills_dirs: [".claude/skills", "tools/AI/claude/skills"],
-    docs_dirs: [".claude/docs", "tools/AI/claude/docs"]
+    md_files: [],
+    skills_dirs: [],
+    docs_dirs: []
   },
   endpoints: {
     claude: {
@@ -18,9 +19,9 @@ export const mockConfig: SyncConfig = {
       dir: ".claude",
       name: "Claude Code",
       md: "CLAUDE.md",
-      md_local_candidates: [".claude/CLAUDE.local.md", ".claude/claude.local.md"],
-      skills_dirs: [".claude/skills", "tools/AI/claude/skills"],
-      docs_dirs: [".claude/docs", "tools/AI/claude/docs"],
+      md_local_candidates: [],
+      skills_dirs: [],
+      docs_dirs: [],
       mode: "junction"
     },
     codex: {
@@ -29,8 +30,8 @@ export const mockConfig: SyncConfig = {
       name: "Codex",
       md: "AGENTS.md",
       md_local_candidates: [],
-      skills_dirs: [".codex/skills"],
-      docs_dirs: [".codex/docs"],
+      skills_dirs: [],
+      docs_dirs: [],
       mode: "junction"
     },
     gemini: {
@@ -39,16 +40,16 @@ export const mockConfig: SyncConfig = {
       name: "Gemini",
       md: "GEMINI.md",
       md_local_candidates: [],
-      skills_dirs: [".gemini/skills"],
-      docs_dirs: [".gemini/docs"],
+      skills_dirs: [],
+      docs_dirs: [],
       mode: "junction"
     }
   },
   sync: {
-    targets: ["codex", "gemini"]
+    targets: ["codex"]
   },
   skill_selection: {
-    common: ["act-dev", "video-expert", "xlocust-smoke"],
+    common: [],
     extra: { codex: [], gemini: [] },
     exclude: { codex: [], gemini: [] }
   },
@@ -67,6 +68,9 @@ export const mockConfig: SyncConfig = {
       "CLAUDE.local.md": "GEMINI.md",
       "claude.local.md": "GEMINI.md"
     }
+  },
+  preferences: {
+    close_to_tray: false
   },
   runtime: {
     python_executable: "python/bin/python.exe",

@@ -29,6 +29,14 @@ export type Dictionary = {
     unsaved: string;
     workspace: string;
     workspaceHint: string;
+    workspaceRequired: string;
+    workspaces: string;
+    noWorkspaces: string;
+    deleteWorkspace: string;
+    firstRunWorkspaceTitle: string;
+    firstRunWorkspaceIntro: string;
+    chooseWorkspaceNow: string;
+    skipForNow: string;
     scope: string;
     saveConfig: string;
     runSync: string;
@@ -87,6 +95,14 @@ export type Dictionary = {
     themeLight: string;
     themeDark: string;
     themeSystem: string;
+    closeBehavior: string;
+    closeBehaviorHint: string;
+    minimizeOnClose: string;
+    closeAppTitle: string;
+    closeAppIntro: string;
+    minimizeToTray: string;
+    exitApplication: string;
+    rememberMinimizeOnClose: string;
     version: string;
     aboutDesc: string;
     help: string;
@@ -130,7 +146,15 @@ export const dictionaries: Record<Language, Dictionary> = {
       loading: "正在加载 CC Sync...",
       unsaved: "未保存",
       workspace: "工作区",
-      workspaceHint: "工具目录在 Trunk/tools/AI/agent_sync_gui，默认工作区应指向 Trunk",
+      workspaceHint: "选择要同步的项目根目录；首次启动可先留空",
+      workspaceRequired: "请先选择工作区",
+      workspaces: "工作区列表",
+      noWorkspaces: "暂无工作区",
+      deleteWorkspace: "删除工作区",
+      firstRunWorkspaceTitle: "选择工作区",
+      firstRunWorkspaceIntro: "首次打开请先选择要同步的项目根目录。之后可以在主界面添加多个工作区并切换。",
+      chooseWorkspaceNow: "选择工作区",
+      skipForNow: "稍后设置",
       scope: "范围",
       saveConfig: "保存配置",
       runSync: "执行同步",
@@ -189,6 +213,14 @@ export const dictionaries: Record<Language, Dictionary> = {
       themeLight: "浅色",
       themeDark: "深色",
       themeSystem: "跟随系统",
+      closeBehavior: "关闭行为",
+      closeBehaviorHint: "控制点击窗口关闭按钮时是询问、退出，还是直接最小化到托盘。",
+      minimizeOnClose: "点击关闭时直接最小化到托盘",
+      closeAppTitle: "关闭 CC Sync？",
+      closeAppIntro: "可以退出应用，也可以最小化到托盘让同步工具继续在后台保留。",
+      minimizeToTray: "最小化到托盘",
+      exitApplication: "退出应用",
+      rememberMinimizeOnClose: "下次点击关闭时直接最小化到托盘",
       version: "版本",
       aboutDesc: "把多个说明文件、文档目录与技能目录汇总后，同步到一个或多个 agent 目标。",
       help: "说明",
@@ -238,7 +270,15 @@ export const dictionaries: Record<Language, Dictionary> = {
       loading: "Loading CC Sync...",
       unsaved: "Unsaved",
       workspace: "Workspace",
-      workspaceHint: "The tool lives in Trunk/tools/AI/agent_sync_gui and the default workspace should point to Trunk",
+      workspaceHint: "Choose the project root to sync; it can stay empty on first launch",
+      workspaceRequired: "Choose a workspace first",
+      workspaces: "Workspaces",
+      noWorkspaces: "No workspaces",
+      deleteWorkspace: "Delete workspace",
+      firstRunWorkspaceTitle: "Choose a workspace",
+      firstRunWorkspaceIntro: "Pick the project root to sync on first launch. You can add multiple workspaces and switch between them later.",
+      chooseWorkspaceNow: "Choose workspace",
+      skipForNow: "Set later",
       scope: "Scope",
       saveConfig: "Save Config",
       runSync: "Run Sync",
@@ -297,6 +337,14 @@ export const dictionaries: Record<Language, Dictionary> = {
       themeLight: "Light",
       themeDark: "Dark",
       themeSystem: "System",
+      closeBehavior: "Close behavior",
+      closeBehaviorHint: "Controls whether the window close button asks, exits, or minimizes directly to the tray.",
+      minimizeOnClose: "Minimize to tray when closing",
+      closeAppTitle: "Close CC Sync?",
+      closeAppIntro: "Exit the app, or minimize it to the tray and keep the sync tool available in the background.",
+      minimizeToTray: "Minimize to tray",
+      exitApplication: "Exit app",
+      rememberMinimizeOnClose: "Minimize directly to tray next time",
       version: "Version",
       aboutDesc: "Merge guide files, docs directories, and skills directories, then sync them to one or more agent targets.",
       help: "Help",

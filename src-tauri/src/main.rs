@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde_json::Value;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::windows::fs::MetadataExt;
@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const TRAY_MENU_SHOW: &str = "show";
@@ -61,12 +61,7 @@ fn app_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf()
-        })
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 fn default_config_path() -> PathBuf {
@@ -75,10 +70,14 @@ fn default_config_path() -> PathBuf {
         return portable_config;
     }
 
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("cc-sync.config.json")
+    let cwd_config = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cc-sync.config.json");
+    if cwd_config.exists() {
+        return cwd_config;
+    }
+
+    portable_config
 }
 
 fn resolve_project_root(config: &Value, config_path: &Path) -> PathBuf {
@@ -91,7 +90,9 @@ fn resolve_project_root(config: &Value, config_path: &Path) -> PathBuf {
 }
 
 fn load_config_json(config_path: Option<String>) -> Result<(Value, PathBuf, PathBuf), String> {
-    let config_path = config_path.map(PathBuf::from).unwrap_or_else(default_config_path);
+    let config_path = config_path
+        .map(PathBuf::from)
+        .unwrap_or_else(default_config_path);
     let raw = fs::read_to_string(&config_path)
         .map_err(|err| format!("failed to read config {}: {}", config_path.display(), err))?;
 
@@ -183,7 +184,10 @@ fn open_path_in_explorer(raw_path: &str) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!("explorer returned non-zero status for {}", target.display()))
+        Err(format!(
+            "explorer returned non-zero status for {}",
+            target.display()
+        ))
     }
 }
 
@@ -263,7 +267,9 @@ fn emit_config(config_path: Option<String>) -> Result<Value, String> {
         .get("script_path")
         .and_then(|value| value.as_str())
         .ok_or_else(|| "missing runtime.script_path".to_string())?;
-    let runtime_base = resolved_config_path.parent().unwrap_or_else(|| Path::new("."));
+    let runtime_base = resolved_config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
 
     let output = Command::new(resolve_runtime_path(runtime_base, python))
         .current_dir(&project_root)
@@ -279,7 +285,8 @@ fn emit_config(config_path: Option<String>) -> Result<Value, String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(stdout.trim()).map_err(|err| format!("failed to parse emit-config output: {}", err))
+    serde_json::from_str(stdout.trim())
+        .map_err(|err| format!("failed to parse emit-config output: {}", err))
 }
 
 fn write_temp_config(base_config_path: &Path, config: &Value) -> Result<PathBuf, String> {
@@ -291,8 +298,13 @@ fn write_temp_config(base_config_path: &Path, config: &Value) -> Result<PathBuf,
     let temp_path = std::env::temp_dir().join(file_name);
     let payload = serde_json::to_string_pretty(config).map_err(|err| err.to_string())?;
 
-    fs::write(&temp_path, payload + "\n")
-        .map_err(|err| format!("failed to write temp config for {}: {}", base_config_path.display(), err))?;
+    fs::write(&temp_path, payload + "\n").map_err(|err| {
+        format!(
+            "failed to write temp config for {}: {}",
+            base_config_path.display(),
+            err
+        )
+    })?;
     Ok(temp_path)
 }
 
@@ -311,9 +323,7 @@ fn run_sync(
     } else {
         None
     };
-    let effective_config_path = temp_config_path
-        .as_ref()
-        .unwrap_or(&resolved_config_path);
+    let effective_config_path = temp_config_path.as_ref().unwrap_or(&resolved_config_path);
     let runtime = runtime_config
         .get("runtime")
         .and_then(|value| value.as_object())
@@ -328,7 +338,9 @@ fn run_sync(
         .and_then(|value| value.as_str())
         .ok_or_else(|| "missing runtime.script_path".to_string())?;
 
-    let runtime_base = resolved_config_path.parent().unwrap_or_else(|| Path::new("."));
+    let runtime_base = resolved_config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
 
     let mut command = Command::new(resolve_runtime_path(runtime_base, python));
     command
@@ -374,7 +386,9 @@ fn load_config_data(config_path: Option<String>) -> Result<Value, String> {
 
 #[tauri::command]
 fn save_config_data(config: Value, config_path: Option<String>) -> Result<(), String> {
-    let path = config_path.map(PathBuf::from).unwrap_or_else(default_config_path);
+    let path = config_path
+        .map(PathBuf::from)
+        .unwrap_or_else(default_config_path);
 
     // 首次从旧版升级落盘前，把旧文件备份为 *.v1.bak（仅当仍是旧版且尚无备份时），非破坏性。
     if path.exists() {
@@ -407,19 +421,46 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn run_sync_preview(scope: String, config_path: Option<String>, config: Option<Value>) -> Result<Value, String> {
+fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.hide().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn run_sync_preview(
+    scope: String,
+    config_path: Option<String>,
+    config: Option<Value>,
+) -> Result<Value, String> {
     run_sync(config_path, config, scope, true)
 }
 
 #[tauri::command]
-fn run_sync_execute(scope: String, config_path: Option<String>, config: Option<Value>) -> Result<Value, String> {
+fn run_sync_execute(
+    scope: String,
+    config_path: Option<String>,
+    config: Option<Value>,
+) -> Result<Value, String> {
     run_sync(config_path, config, scope, false)
 }
 
 /* 扫描给定 skill 目录(由前端按当前内存中的源端点传入，避免依赖磁盘上尚未保存的源选择)。 */
 #[tauri::command]
-fn list_available_skills(dirs: Vec<String>, config_path: Option<String>) -> Result<Vec<SkillOption>, String> {
-    let (_, _, project_root) = load_config_json(config_path)?;
+fn list_available_skills(
+    dirs: Vec<String>,
+    config_path: Option<String>,
+    config: Option<Value>,
+) -> Result<Vec<SkillOption>, String> {
+    let (loaded_config, resolved_config_path, _) = load_config_json(config_path)?;
+    let runtime_config = config.unwrap_or(loaded_config);
+    let project_root = resolve_project_root(&runtime_config, &resolved_config_path);
     let mut skills = BTreeMap::<String, SkillOptionBuilder>::new();
 
     let roots: Vec<PathBuf> = dirs
@@ -478,9 +519,15 @@ fn list_available_skills(dirs: Vec<String>, config_path: Option<String>) -> Resu
 /* 列出某个 target 的 skills 目录里实际存在的技能(子目录名)。
  * 用 entry.path().is_dir() 跟随 junction/symlink，能识别同步创建的链接与复制目录。 */
 #[tauri::command]
-fn list_target_skills(target: String, config_path: Option<String>) -> Result<Vec<TargetSkill>, String> {
-    let (config, _, project_root) = load_config_json(config_path)?;
-    let skills_dir_raw = match target_skills_dir(&config, &target) {
+fn list_target_skills(
+    target: String,
+    config_path: Option<String>,
+    config: Option<Value>,
+) -> Result<Vec<TargetSkill>, String> {
+    let (loaded_config, resolved_config_path, _) = load_config_json(config_path)?;
+    let runtime_config = config.unwrap_or(loaded_config);
+    let project_root = resolve_project_root(&runtime_config, &resolved_config_path);
+    let skills_dir_raw = match target_skills_dir(&runtime_config, &target) {
         Some(raw) => raw,
         None => return Ok(Vec::new()),
     };
@@ -505,13 +552,20 @@ fn list_target_skills(target: String, config_path: Option<String>) -> Result<Vec
         let is_reparse = meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
         let kind = if is_reparse {
             // junction/符号链接：path.is_dir() 会跟随，目标存在则有效，否则失效
-            if path.is_dir() { "link" } else { "broken" }
+            if path.is_dir() {
+                "link"
+            } else {
+                "broken"
+            }
         } else if meta.is_dir() {
             "copy"
         } else {
             continue; // 普通文件，忽略
         };
-        items.push(TargetSkill { name, kind: kind.to_string() });
+        items.push(TargetSkill {
+            name,
+            kind: kind.to_string(),
+        });
     }
     items.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(items)
@@ -519,7 +573,10 @@ fn list_target_skills(target: String, config_path: Option<String>) -> Result<Vec
 
 /* 弹原生文件夹选择窗口，返回所选目录(取消则返回 null)。default_path 用于预定位到当前工作区。 */
 #[tauri::command]
-async fn pick_folder(app: tauri::AppHandle, default_path: Option<String>) -> Result<Option<String>, String> {
+async fn pick_folder(
+    app: tauri::AppHandle,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let mut builder = app.dialog().file();
     if let Some(start) = default_path {
@@ -534,7 +591,10 @@ async fn pick_folder(app: tauri::AppHandle, default_path: Option<String>) -> Res
 
 /* 弹原生文件选择窗口，返回所选文件(取消则返回 null)。 */
 #[tauri::command]
-async fn pick_file(app: tauri::AppHandle, default_path: Option<String>) -> Result<Option<String>, String> {
+async fn pick_file(
+    app: tauri::AppHandle,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let mut builder = app.dialog().file();
     if let Some(start) = default_path {
@@ -563,6 +623,8 @@ fn main() {
             load_config_data,
             save_config_data,
             open_path,
+            hide_main_window,
+            exit_app,
             run_sync_preview,
             run_sync_execute,
             list_available_skills,
@@ -581,9 +643,7 @@ fn main() {
             {
                 if label == "main" {
                     api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
+                    let _ = app.emit("cc-sync-close-requested", ());
                 }
             }
         });
