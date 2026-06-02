@@ -18,6 +18,7 @@ from sync_config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, load_config, write_de
 CONFIG: dict[str, Any] = {}
 CONFIG_BASE = PROJECT_ROOT
 OUTPUT_JSON = False
+FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
 
 
 def log(msg: str) -> None:
@@ -50,6 +51,13 @@ def normalized_path(path: Path) -> str:
     return os.path.normcase(os.path.abspath(str(path)))
 
 
+def resolved_normalized_path(path: Path) -> str:
+    try:
+        return normalized_path(path.resolve(strict=False))
+    except OSError:
+        return normalized_path(path)
+
+
 def is_path_within(child: Path, parent: Path) -> bool:
     child_norm = normalized_path(child)
     parent_norm = normalized_path(parent)
@@ -59,7 +67,15 @@ def is_path_within(child: Path, parent: Path) -> bool:
         return False
 
 
-def validate_src_dst_safety(src: Path, dst: Path, *, label: str) -> list[str]:
+def is_reparse_point(path: Path) -> bool:
+    try:
+        attrs = getattr(path.lstat(), "st_file_attributes", 0)
+    except FileNotFoundError:
+        return path.is_symlink()
+    return path.is_symlink() or bool(attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def validate_src_dst_safety(src: Path, dst: Path, *, label: str, resolve_paths: bool = True) -> list[str]:
     if normalized_path(src) == normalized_path(dst):
         return [f"{label} 源和目标相同，已阻止: {src} -> {dst}"]
 
@@ -68,6 +84,16 @@ def validate_src_dst_safety(src: Path, dst: Path, *, label: str) -> list[str]:
         errors.append(f"{label} 目标位于源路径内部，已阻止: {src} -> {dst}")
     if is_path_within(src, dst):
         errors.append(f"{label} 源位于目标路径内部，已阻止: {src} -> {dst}")
+
+    if resolve_paths:
+        src_resolved = Path(resolved_normalized_path(src))
+        dst_resolved = Path(resolved_normalized_path(dst))
+        if normalized_path(src_resolved) == normalized_path(dst_resolved):
+            return errors + [f"{label} 源和目标解析后相同，已阻止: {src} -> {dst}"]
+        if is_path_within(dst_resolved, src_resolved):
+            errors.append(f"{label} 目标解析后位于源路径内部，已阻止: {src} -> {dst}")
+        if is_path_within(src_resolved, dst_resolved):
+            errors.append(f"{label} 源解析后位于目标路径内部，已阻止: {src} -> {dst}")
     return errors
 
 
@@ -80,7 +106,18 @@ def validate_plan_safety(operations: list[dict[str, Any]]) -> list[str]:
             for src in operation.get("sources", []):
                 errors.extend(validate_src_dst_safety(Path(src), dst, label=label))
         elif operation["type"] in {"skills", "docs"} and operation.get("src"):
-            errors.extend(validate_src_dst_safety(Path(operation["src"]), Path(operation["dst"]), label=label))
+            dst = Path(operation["dst"])
+            errors.extend(
+                validate_src_dst_safety(
+                    Path(operation["src"]),
+                    dst,
+                    label=label,
+                    resolve_paths=not (
+                        is_reparse_point(dst)
+                        or (operation["type"] == "docs" and is_reparse_point(dst.parent))
+                    ),
+                )
+            )
 
     return list(dict.fromkeys(errors))
 
@@ -139,6 +176,14 @@ def copy_file(src: Path, dst: Path) -> None:
     ensure_dir(dst.parent)
     shutil.copy2(src, dst)
     log(f"[copy-file] {dst} <- {src}")
+
+
+def ensure_real_item_parent(dst: Path) -> None:
+    parent = dst.parent
+    if is_reparse_point(parent):
+        log(f"[prepare-dir] 替换旧链接目录为真实目录: {parent}")
+        remove_path(parent)
+    ensure_dir(parent)
 
 
 def render_text_for_target(content: str, ordered_pairs: list[list[str]]) -> str:
@@ -543,9 +588,25 @@ def execute_operation(operation: dict[str, Any]) -> None:
         src = operation.get("src")
         if not src:
             raise FileNotFoundError(f"{operation['type']} 源目录不存在")
+
+        src_path = Path(src)
+        dst_path = Path(operation["dst"])
+        if operation["type"] == "docs":
+            ensure_real_item_parent(dst_path)
+
+        label = f"{operation.get('type')}:{operation.get('target')}:{operation.get('name', '')}"
+        safety_errors = validate_src_dst_safety(
+            src_path,
+            dst_path,
+            label=label,
+            resolve_paths=not is_reparse_point(dst_path),
+        )
+        if safety_errors:
+            raise RuntimeError("\n".join(safety_errors))
+
         link_or_copy_path(
-            Path(src),
-            Path(operation["dst"]),
+            src_path,
+            dst_path,
             operation.get("mode", "junction"),
         )
         return

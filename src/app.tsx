@@ -62,6 +62,41 @@ function summarizePlan(plan: SyncPlan | null) {
   return summarizeOperations(plan?.operations ?? []);
 }
 
+function targetCount(plan: SyncPlan) {
+  return new Set(plan.operations.map((operation) => operation.target)).size;
+}
+
+function formatOperation(operation: PlanOperation, index: number) {
+  const prefix = `${index + 1}. [${operation.type}] ${operation.target}`;
+  if (operation.type === "md") {
+    return `${prefix}: ${(operation.sources ?? []).length} files -> ${operation.dst}`;
+  }
+
+  const name = operation.name ? `${operation.name} ` : "";
+  const mode = operation.mode ? ` (${operation.mode})` : "";
+  return `${prefix}: ${name}${operation.src ?? "(missing source)"} -> ${operation.dst}${mode}`;
+}
+
+function formatPlanDetails(plan: SyncPlan, title: string, text: (typeof dictionaries)[Language]["logs"]) {
+  const summary = summarizeOperations(plan.operations);
+  const lines = [
+    title,
+    text.planSummary(plan.operations.length, summary.md, summary.skills, summary.docs, targetCount(plan)),
+  ];
+
+  if (!plan.operations.length) {
+    lines.push(text.noOperations);
+  } else {
+    lines.push(...plan.operations.map((operation, index) => formatOperation(operation, index)));
+  }
+
+  return lines.join("\n");
+}
+
+function formatPlanMessages(messages: string[], title: string) {
+  return [title, ...messages.map((message, index) => `${index + 1}. ${message}`)].join("\n");
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => loadLanguage());
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
@@ -223,6 +258,13 @@ export default function App() {
       const previewPlan = await previewSync(scope, config ?? undefined);
       const previewSucceeded = previewPlan.success ?? !previewPlan.errors.length;
       appendLog(setLogs, previewPlan.errors.length ? "error" : "info", text.logs.previewReady(previewSucceeded));
+      appendLog(setLogs, "info", formatPlanDetails(previewPlan, text.logs.previewDetails, text.logs));
+      if (previewPlan.warnings?.length) {
+        appendLog(setLogs, "info", formatPlanMessages(previewPlan.warnings, text.logs.planWarnings(previewPlan.warnings.length)));
+      }
+      if (previewPlan.errors.length) {
+        appendLog(setLogs, "error", formatPlanMessages(previewPlan.errors, text.logs.planErrors(previewPlan.errors.length)));
+      }
       setConfirmPlan(previewPlan);
     } catch (error) {
       appendLog(setLogs, "error", String(error));
@@ -239,6 +281,13 @@ export default function App() {
       startTransition(() => setPlan(nextPlan));
       const syncSucceeded = nextPlan.success ?? !nextPlan.errors.length;
       appendLog(setLogs, nextPlan.errors.length ? "error" : "info", text.logs.syncFinished(syncSucceeded));
+      appendLog(setLogs, "info", formatPlanDetails(nextPlan, text.logs.runDetails, text.logs));
+      if (nextPlan.warnings?.length) {
+        appendLog(setLogs, "info", formatPlanMessages(nextPlan.warnings, text.logs.planWarnings(nextPlan.warnings.length)));
+      }
+      if (nextPlan.errors.length) {
+        appendLog(setLogs, "error", formatPlanMessages(nextPlan.errors, text.logs.planErrors(nextPlan.errors.length)));
+      }
       setConfirmPlan(null);
       if (syncSucceeded) {
         setSyncNotice(summarizePlan(nextPlan));

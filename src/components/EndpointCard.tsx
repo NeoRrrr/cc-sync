@@ -2,6 +2,15 @@ import type { ReactNode } from "react";
 import type { Dictionary } from "../i18n";
 import type { Endpoint, TargetSkill } from "../types";
 import { compactPath } from "../lib/format";
+import claudeIcon from "../assets/agent-icons/claude.svg";
+import codexIcon from "../assets/agent-icons/codex.svg";
+import geminiIcon from "../assets/agent-icons/gemini.svg";
+
+const endpointIcons: Record<string, string> = {
+  claude: claudeIcon,
+  codex: codexIcon,
+  gemini: geminiIcon,
+};
 
 /* 一个目标端点的卡片：是否同步到它(target 开关) + 它磁盘上实际有哪些技能(链接/复制/失效)。 */
 export function EndpointCard({
@@ -52,6 +61,7 @@ export function EndpointCard({
   const legend = (["link", "copy", "broken"] as const)
     .map((kind) => ({ kind, count: diskSkills.filter((s) => s.kind === kind).length }))
     .filter((entry) => entry.count > 0);
+  const endpointIcon = endpointIcons[id];
 
   let skillBody: ReactNode;
   if (sortedSkills.length) {
@@ -70,8 +80,12 @@ export function EndpointCard({
     >
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl border border-primary-soft-border bg-primary-soft text-[1.1rem] font-extrabold text-primary">
-            {(endpoint.label || id).slice(0, 1).toUpperCase()}
+          <div className="grid h-10 w-10 place-items-center rounded-xl border border-line bg-white shadow-[var(--shadow-sm)]">
+            {endpointIcon ? (
+              <img src={endpointIcon} alt="" aria-hidden="true" className="h-6 w-6 object-contain" />
+            ) : (
+              <span className="text-[1.1rem] font-extrabold text-primary">{(endpoint.label || id).slice(0, 1).toUpperCase()}</span>
+            )}
           </div>
           <h3 className="m-0 text-[1.1rem] font-extrabold text-main">{endpoint.label || id}</h3>
         </div>

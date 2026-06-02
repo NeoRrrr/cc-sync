@@ -113,6 +113,12 @@ export type Dictionary = {
     syncRequested: (scope: string) => string;
     syncFinished: (success: boolean) => string;
     previewReady: (success: boolean) => string;
+    previewDetails: string;
+    runDetails: string;
+    planSummary: (total: number, md: number, skills: number, docs: number, targets: number) => string;
+    noOperations: string;
+    planWarnings: (count: number) => string;
+    planErrors: (count: number) => string;
     configSaved: string;
   };
 };
@@ -217,6 +223,12 @@ export const dictionaries: Record<Language, Dictionary> = {
       syncRequested: (scope) => `请求同步，scope=${scope}`,
       syncFinished: (success) => `同步结束，success=${String(success)}`,
       previewReady: (success) => `已生成预览，success=${String(success)}`,
+      previewDetails: "预览详情",
+      runDetails: "执行详情",
+      planSummary: (total, md, skills, docs, targets) => `操作 ${total} 条，目标 ${targets} 个：md=${md}, skills=${skills}, docs=${docs}`,
+      noOperations: "没有可执行操作",
+      planWarnings: (count) => `同步提示 ${count} 条`,
+      planErrors: (count) => `同步错误 ${count} 条`,
       configSaved: "配置已保存",
     },
   },
@@ -319,6 +331,12 @@ export const dictionaries: Record<Language, Dictionary> = {
       syncRequested: (scope) => `sync requested for scope=${scope}`,
       syncFinished: (success) => `sync finished, success=${String(success)}`,
       previewReady: (success) => `preview ready, success=${String(success)}`,
+      previewDetails: "Preview details",
+      runDetails: "Run details",
+      planSummary: (total, md, skills, docs, targets) => `${total} operations, ${targets} targets: md=${md}, skills=${skills}, docs=${docs}`,
+      noOperations: "No operations to run",
+      planWarnings: (count) => `${count} sync warnings`,
+      planErrors: (count) => `${count} sync errors`,
       configSaved: "config saved",
     },
   },

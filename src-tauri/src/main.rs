@@ -7,9 +7,19 @@ use std::fs;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+const TRAY_MENU_SHOW: &str = "show";
+const TRAY_MENU_QUIT: &str = "quit";
+
+struct TrayState {
+    icon: Mutex<Option<TrayIcon>>,
+}
 
 #[derive(Serialize)]
 struct SkillOption {
@@ -175,6 +185,48 @@ fn open_path_in_explorer(raw_path: &str) -> Result<(), String> {
     } else {
         Err(format!("explorer returned non-zero status for {}", target.display()))
     }
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, TRAY_MENU_SHOW, "打开 CC Sync", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_MENU_QUIT, "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let app_handle = app.handle().clone();
+    let mut builder = TrayIconBuilder::with_id("main")
+        .tooltip("CC Sync")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_MENU_SHOW => show_main_window(app),
+            TRAY_MENU_QUIT => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(move |_tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(&app_handle);
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+
+    let icon = builder.build(app)?;
+    app.state::<TrayState>().icon.lock().unwrap().replace(icon);
+    Ok(())
 }
 
 /* 某 target 端点的 skill 写入目录。v2 读 endpoints[target].skills_dirs[0]；旧版回退 targets[target].skills_dir。 */
@@ -499,6 +551,13 @@ async fn pick_file(app: tauri::AppHandle, default_path: Option<String>) -> Resul
 
 fn main() {
     tauri::Builder::default()
+        .manage(TrayState {
+            icon: Mutex::new(None),
+        })
+        .setup(|app| {
+            setup_tray(app)?;
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             load_config_data,
@@ -511,6 +570,21 @@ fn main() {
             pick_folder,
             pick_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::CloseRequested { api, .. },
+                ..
+            } = event
+            {
+                if label == "main" {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+            }
+        });
 }
