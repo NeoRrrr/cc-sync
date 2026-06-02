@@ -28,11 +28,12 @@ New-Item -ItemType Directory -Path $AppDir | Out-Null
 
 Write-Host "[cc-sync] copying app files..."
 Copy-Item -LiteralPath $ReleaseExe -Destination (Join-Path $AppDir "CC Sync.exe")
+Copy-Item -LiteralPath (Join-Path $ProjectDir "sync_agents.py") -Destination $AppDir
 Copy-Item -LiteralPath (Join-Path $ProjectDir "sync_from_claude.py") -Destination $AppDir
 Copy-Item -LiteralPath (Join-Path $ProjectDir "sync_config.py") -Destination $AppDir
 
 Write-Host "[cc-sync] writing default portable config..."
-& $SourcePython (Join-Path $ProjectDir "sync_from_claude.py") `
+& $SourcePython (Join-Path $ProjectDir "sync_agents.py") `
     --config (Join-Path $AppDir "cc-sync.config.json") `
     --write-default-config `
     --force-overwrite-config

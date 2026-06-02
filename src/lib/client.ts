@@ -62,6 +62,14 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return invoke<string | null>("pick_folder", { defaultPath });
 }
 
+/* 弹原生文件选择窗口，返回所选文件(取消返回 null)。 */
+export async function pickFile(defaultPath?: string): Promise<string | null> {
+  if (!inTauri()) {
+    return null;
+  }
+  return invoke<string | null>("pick_file", { defaultPath });
+}
+
 /* 打开目录或在资源管理器中定位文件。 */
 export async function openPath(path: string): Promise<void> {
   if (!inTauri()) {
@@ -83,10 +91,30 @@ export async function listTargetSkills(target: string): Promise<TargetSkill[]> {
 export async function getAvailableSkills(dirs: string[]): Promise<AvailableSkillOption[]> {
   if (!inTauri()) {
     return [
-      { name: "ui-expert", paths: ["tools/AI/claude/skills/ui-expert"] },
-      { name: "battle-expert", paths: ["tools/AI/claude/skills/battle-expert"] },
-      { name: "demo-skill-1", paths: ["tools/AI/claude/skills/demo-skill-1"] },
-      { name: "demo-skill-2", paths: ["tools/AI/claude/skills/demo-skill-2"] }
+      {
+        name: "ui-expert",
+        display_name: "ui-expert",
+        description: "前端界面、交互细节、响应式布局和视觉一致性检查。",
+        paths: ["tools/AI/claude/skills/ui-expert"]
+      },
+      {
+        name: "battle-expert",
+        display_name: "battle-expert",
+        description: "战斗逻辑、录像回放、结算链路和战斗相关问题排查。",
+        paths: ["tools/AI/claude/skills/battle-expert"]
+      },
+      {
+        name: "demo-skill-1",
+        display_name: "demo-skill-1",
+        description: "示例技能，用于非桌面模式下预览技能说明展示效果。",
+        paths: ["tools/AI/claude/skills/demo-skill-1"]
+      },
+      {
+        name: "demo-skill-2",
+        display_name: "demo-skill-2",
+        description: "另一个示例技能，模拟较长描述在列表中的截断效果。",
+        paths: ["tools/AI/claude/skills/demo-skill-2"]
+      }
     ];
   }
 

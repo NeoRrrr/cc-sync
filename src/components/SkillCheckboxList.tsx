@@ -8,6 +8,14 @@ function sourceRoots(option: AvailableSkillOption | undefined): string[] {
   return Array.from(new Set((option?.paths ?? []).map(toSkillSourceRoot)));
 }
 
+function skillDisplayName(option: AvailableSkillOption | undefined, fallback: string): string {
+  return option?.display_name?.trim() || fallback;
+}
+
+function skillDescription(option: AvailableSkillOption | undefined): string | undefined {
+  return option?.description?.trim() || undefined;
+}
+
 export function SkillCheckboxList({
   availableSkills,
   selectedSkills,
@@ -30,8 +38,9 @@ export function SkillCheckboxList({
     [availableSkills]
   );
   const allSkills = useMemo(
-    () => Array.from(new Set([...availableSkills.map((option) => option.name), ...selectedSkills])).sort(),
-    [availableSkills, selectedSkills]
+    () => Array.from(new Set([...availableSkills.map((option) => option.name), ...selectedSkills]))
+      .sort((a, b) => skillDisplayName(optionMap.get(a), a).localeCompare(skillDisplayName(optionMap.get(b), b))),
+    [availableSkills, optionMap, selectedSkills]
   );
 
   /* 按主来源(primary root)分组；无来源的(配置了但磁盘找不到)归到最后一组。 */
@@ -73,19 +82,25 @@ export function SkillCheckboxList({
         </div>
         <div className="checkbox-selected-list">
           {selectedSkills.length ? (
-            selectedSkills.map((skill) => (
-              <span key={`selected-${skill}`} className="skill-chip">
-                {skill}
-                <button
-                  type="button"
-                  className="skill-chip-remove"
-                  onClick={() => onChange(selectedSkills.filter((s) => s !== skill))}
-                  aria-label={unselectLabel(skill)}
-                >
-                  ×
-                </button>
-              </span>
-            ))
+            selectedSkills.map((skill) => {
+              const option = optionMap.get(skill);
+              const displayName = skillDisplayName(option, skill);
+              const description = skillDescription(option);
+              return (
+                <span key={`selected-${skill}`} className="skill-chip" title={description ?? skill}>
+                  <span className="skill-chip-label">{displayName}</span>
+                  {displayName !== skill && <code className="skill-chip-id">{skill}</code>}
+                  <button
+                    type="button"
+                    className="skill-chip-remove"
+                    onClick={() => onChange(selectedSkills.filter((s) => s !== skill))}
+                    aria-label={unselectLabel(skill)}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })
           ) : (
             <span className="muted">{emptySelectionLabel}</span>
           )}
@@ -113,10 +128,14 @@ export function SkillCheckboxList({
             <span className="checkbox-group-count">{group.skills.length}</span>
           </button>
           {!isCollapsed && group.skills.map((skill) => {
+            const option = optionMap.get(skill);
             const isSelected = selectedSkills.includes(skill);
-            const extraSources = sourceRoots(optionMap.get(skill)).length - 1;
+            const roots = sourceRoots(option);
+            const extraSources = roots.length - 1;
+            const displayName = skillDisplayName(option, skill);
+            const description = skillDescription(option);
             return (
-              <label key={skill} className="checkbox-item">
+              <label key={skill} className="checkbox-item" title={description ?? skill}>
                 <div className="checkbox-line">
                   <input
                     type="checkbox"
@@ -129,16 +148,20 @@ export function SkillCheckboxList({
                       }
                     }}
                   />
-                  <span className="checkbox-name">{skill}</span>
+                  <span className="checkbox-title">
+                    <span className="checkbox-name">{displayName}</span>
+                    {displayName !== skill && <code className="checkbox-id">{skill}</code>}
+                  </span>
                   {extraSources > 0 && (
                     <span
                       className="checkbox-extra"
-                      title={sourceRoots(optionMap.get(skill)).join("\n")}
+                      title={roots.join("\n")}
                     >
                       +{extraSources}
                     </span>
                   )}
                 </div>
+                {description && <p className="checkbox-description">{description}</p>}
               </label>
             );
           })}

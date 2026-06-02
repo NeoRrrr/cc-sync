@@ -36,6 +36,7 @@ export type Dictionary = {
     extraSkillCount: string;
     noSkills: string;
     syncErrors: string;
+    syncWarnings: string;
     enabled: string;
     disabled: string;
     mode: string;
@@ -44,6 +45,16 @@ export type Dictionary = {
     docsDir: string;
     commonSkills: string;
     activeCommonSkills: string;
+    inputSources: string;
+    configure: string;
+    mdSources: string;
+    skillSourceDirs: string;
+    docsSourceDirs: string;
+    chooseFile: string;
+    remove: string;
+    add: string;
+    noSources: string;
+    pathPlaceholder: string;
     extraSkills: string;
     excludeSkills: string;
     skillSources: string;
@@ -121,6 +132,7 @@ export const dictionaries: Record<Language, Dictionary> = {
       extraSkillCount: "额外技能",
       noSkills: "暂无技能",
       syncErrors: "执行错误",
+      syncWarnings: "同步提示",
       enabled: "启用",
       disabled: "停用",
       mode: "模式",
@@ -129,6 +141,16 @@ export const dictionaries: Record<Language, Dictionary> = {
       docsDir: "文档目录",
       commonSkills: "通用技能",
       activeCommonSkills: "当前通用 SKILL",
+      inputSources: "输入源",
+      configure: "配置",
+      mdSources: "说明文件源",
+      skillSourceDirs: "技能源目录",
+      docsSourceDirs: "文档源目录",
+      chooseFile: "选择文件",
+      remove: "删除",
+      add: "添加",
+      noSources: "暂无输入源",
+      pathPlaceholder: "输入文件或目录路径",
       extraSkills: "额外技能",
       excludeSkills: "排除技能",
       skillSources: "来源路径",
@@ -162,15 +184,16 @@ export const dictionaries: Record<Language, Dictionary> = {
       themeDark: "深色",
       themeSystem: "跟随系统",
       version: "版本",
-      aboutDesc: "在多个 agent（Claude / Codex / Gemini）之间同步说明文件、文档与技能 —— 选一个源，铺到一个或多个目标。",
+      aboutDesc: "把多个说明文件、文档目录与技能目录汇总后，同步到一个或多个 agent 目标。",
       help: "说明",
       helpTitle: "使用说明",
-      helpIntro: "CC Sync 在多个 agent（Claude / Codex / Gemini）之间同步说明文件、文档与技能：选一个「源」，铺到一个或多个「目标」。",
+      helpIntro: "CC Sync 把多个输入源汇总后，同步到一个或多个 agent 目标。",
       helpPoints: [
-        "同步源：顶栏选哪个 agent 当源（默认 Claude），它的内容就是要同步出去的。",
-        "目标：每张卡片上的开关决定是否把源同步到该 agent。",
+        "输入源：可以配置多个说明文件、多个技能目录、多个文档目录。",
+        "目标：每张卡片上的开关决定是否把输入源同步到该 agent。",
         "工作区是项目根目录；范围决定同步内容（全部 / 说明文件 md / 技能 / 文档）。",
-        "通用技能发给所有目标；每个目标可在「高级配置」里追加 / 排除技能，或改「源 → 该目标」的文本替换。",
+        "技能和文档按名称去重；同名项保留第一个输入源，后续重复项会提示并忽略。",
+        "通用技能发给所有目标；每个目标可在「高级配置」里追加 / 排除技能，或改该目标的文本替换。",
         "执行同步：先预览将要执行的操作，确认后才写盘；有错误时不会执行。",
         "配置改动自动保存（首次从旧版升级会先备份为 cc-sync.config.v1.bak）。",
       ],
@@ -211,6 +234,7 @@ export const dictionaries: Record<Language, Dictionary> = {
       extraSkillCount: "Extra skills",
       noSkills: "No skills",
       syncErrors: "Sync errors",
+      syncWarnings: "Sync warnings",
       enabled: "Enabled",
       disabled: "Disabled",
       mode: "Mode",
@@ -219,6 +243,16 @@ export const dictionaries: Record<Language, Dictionary> = {
       docsDir: "Docs dir",
       commonSkills: "Common skills",
       activeCommonSkills: "Active common skills",
+      inputSources: "Input sources",
+      configure: "Configure",
+      mdSources: "Guide file sources",
+      skillSourceDirs: "Skill source dirs",
+      docsSourceDirs: "Docs source dirs",
+      chooseFile: "Browse file",
+      remove: "Remove",
+      add: "Add",
+      noSources: "No input sources",
+      pathPlaceholder: "Enter a file or directory path",
       extraSkills: "Extra skills",
       excludeSkills: "Exclude skills",
       skillSources: "Source paths",
@@ -252,15 +286,16 @@ export const dictionaries: Record<Language, Dictionary> = {
       themeDark: "Dark",
       themeSystem: "System",
       version: "Version",
-      aboutDesc: "Keep guide files, docs, and skills in sync across agents (Claude / Codex / Gemini) — pick a source, push to one or more targets.",
+      aboutDesc: "Merge guide files, docs directories, and skills directories, then sync them to one or more agent targets.",
       help: "Help",
       helpTitle: "How to use",
-      helpIntro: "CC Sync keeps guide files, docs, and skills in sync across agents (Claude / Codex / Gemini): pick one source, push it to one or more targets.",
+      helpIntro: "CC Sync merges configured input sources and syncs them to one or more agent targets.",
       helpPoints: [
-        "Source: pick which agent is the source in the top bar (Claude by default) — its content is what gets pushed out.",
-        "Targets: the toggle on each card decides whether the source syncs to that agent.",
+        "Input sources: configure multiple guide files, skill directories, and docs directories.",
+        "Targets: the toggle on each card decides whether the inputs sync to that agent.",
         "Workspace is the project root; Scope picks what to sync (all / guide md / skills / docs).",
-        "Common skills go to every target; per target you can add/exclude skills or edit the source→target text replacements under Advanced config.",
+        "Skills and docs are deduplicated by name; the first matching source wins and later duplicates are ignored with a warning.",
+        "Common skills go to every target; per target you can add/exclude skills or edit target text replacements under Advanced config.",
         "Run sync: previews the operations first and writes only after you confirm; it won't run if there are errors.",
         "Config edits auto-save (the first upgrade from the old layout backs up cc-sync.config.v1.bak).",
       ],

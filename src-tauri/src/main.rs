@@ -14,6 +14,21 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 #[derive(Serialize)]
 struct SkillOption {
     name: String,
+    display_name: Option<String>,
+    description: Option<String>,
+    paths: Vec<String>,
+}
+
+#[derive(Default)]
+struct SkillMetadata {
+    display_name: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Default)]
+struct SkillOptionBuilder {
+    display_name: Option<String>,
+    description: Option<String>,
     paths: Vec<String>,
 }
 
@@ -84,6 +99,53 @@ fn resolve_runtime_path(project_root: &Path, raw: &str) -> PathBuf {
     } else {
         project_root.join(candidate)
     }
+}
+
+fn clean_frontmatter_value(raw: &str) -> Option<String> {
+    let value = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn parse_skill_metadata(skill_md: &Path) -> Option<SkillMetadata> {
+    let content = fs::read_to_string(skill_md).ok()?;
+    let mut metadata = SkillMetadata::default();
+    let mut lines = content.lines();
+
+    if matches!(lines.next().map(str::trim), Some("---")) {
+        for line in lines.by_ref() {
+            let trimmed = line.trim();
+            if trimmed == "---" {
+                break;
+            }
+            let Some((key, value)) = trimmed.split_once(':') else {
+                continue;
+            };
+            match key.trim() {
+                "name" => metadata.display_name = clean_frontmatter_value(value),
+                "description" => metadata.description = clean_frontmatter_value(value),
+                _ => {}
+            }
+        }
+    }
+
+    if metadata.display_name.is_none() {
+        metadata.display_name = content.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("# ")
+                .and_then(clean_frontmatter_value)
+        });
+    }
+
+    Some(metadata)
 }
 
 /* 打开目录，或在资源管理器中定位文件。 */
@@ -266,8 +328,12 @@ fn save_config_data(config: Value, config_path: Option<String>) -> Result<(), St
     if path.exists() {
         if let Ok(raw) = fs::read_to_string(&path) {
             if let Ok(existing) = serde_json::from_str::<Value>(&raw) {
-                let is_legacy = existing.get("schema_version").is_none()
-                    && existing.get("endpoints").is_none();
+                let is_legacy = existing
+                    .get("schema_version")
+                    .and_then(|value| value.as_i64())
+                    .map(|version| version < 3)
+                    .unwrap_or(true)
+                    || existing.get("sources").is_none();
                 if is_legacy {
                     let backup = path.with_extension("v1.bak");
                     if !backup.exists() {
@@ -302,7 +368,7 @@ fn run_sync_execute(scope: String, config_path: Option<String>, config: Option<V
 #[tauri::command]
 fn list_available_skills(dirs: Vec<String>, config_path: Option<String>) -> Result<Vec<SkillOption>, String> {
     let (_, _, project_root) = load_config_json(config_path)?;
-    let mut skills = BTreeMap::<String, Vec<String>>::new();
+    let mut skills = BTreeMap::<String, SkillOptionBuilder>::new();
 
     let roots: Vec<PathBuf> = dirs
         .iter()
@@ -330,16 +396,30 @@ fn list_available_skills(dirs: Vec<String>, config_path: Option<String>) -> Resu
                 continue;
             }
 
-            skills
-                .entry(name)
-                .or_default()
-                .push(path.to_string_lossy().to_string());
+            let skill_md = path.join("SKILL.md");
+            let Some(metadata) = parse_skill_metadata(&skill_md) else {
+                continue;
+            };
+
+            let option = skills.entry(name).or_default();
+            if option.display_name.is_none() {
+                option.display_name = metadata.display_name;
+            }
+            if option.description.is_none() {
+                option.description = metadata.description;
+            }
+            option.paths.push(path.to_string_lossy().to_string());
         }
     }
 
     Ok(skills
         .into_iter()
-        .map(|(name, paths)| SkillOption { name, paths })
+        .map(|(name, option)| SkillOption {
+            name,
+            display_name: option.display_name,
+            description: option.description,
+            paths: option.paths,
+        })
         .collect())
 }
 
@@ -400,6 +480,23 @@ async fn pick_folder(app: tauri::AppHandle, default_path: Option<String>) -> Res
     Ok(picked.map(|file_path| file_path.to_string()))
 }
 
+/* 弹原生文件选择窗口，返回所选文件(取消则返回 null)。 */
+#[tauri::command]
+async fn pick_file(app: tauri::AppHandle, default_path: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut builder = app.dialog().file();
+    if let Some(start) = default_path {
+        let start_path = PathBuf::from(&start);
+        if start_path.is_dir() {
+            builder = builder.set_directory(start_path);
+        } else if let Some(parent) = start_path.parent() {
+            builder = builder.set_directory(parent);
+        }
+    }
+    let picked = builder.blocking_pick_file();
+    Ok(picked.map(|file_path| file_path.to_string()))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -411,7 +508,8 @@ fn main() {
             run_sync_execute,
             list_available_skills,
             list_target_skills,
-            pick_folder
+            pick_folder,
+            pick_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

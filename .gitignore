@@ -14,6 +14,9 @@ cc-sync.config.json
 __pycache__/
 *.py[cod]
 
+# Local code intelligence index
+.codegraph/
+
 # TypeScript incremental cache
 *.tsbuildinfo
 

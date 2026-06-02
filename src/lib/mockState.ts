@@ -1,12 +1,17 @@
 import type { SyncConfig } from "../types";
 
-/* 非桌面(浏览器 demo)模式下展示用的示例配置(v2 端点模型)。 */
+/* 非桌面(浏览器 demo)模式下展示用的示例配置(v3 输入源集合模型)。 */
 export const mockConfig: SyncConfig = {
-  schema_version: 2,
+  schema_version: 3,
   project_root: ".",
   overwrite_md: true,
   fallback_to_copy: true,
   verbose: true,
+  sources: {
+    md_files: ["CLAUDE.md", ".claude/CLAUDE.local.md"],
+    skills_dirs: [".claude/skills", "tools/AI/claude/skills"],
+    docs_dirs: [".claude/docs", "tools/AI/claude/docs"]
+  },
   endpoints: {
     claude: {
       label: "Claude Code",
@@ -40,7 +45,6 @@ export const mockConfig: SyncConfig = {
     }
   },
   sync: {
-    source: "claude",
     targets: ["codex", "gemini"]
   },
   skill_selection: {
@@ -49,14 +53,14 @@ export const mockConfig: SyncConfig = {
     exclude: { codex: [], gemini: [] }
   },
   replacements: {
-    "claude->codex": {
+    codex: {
       ".claude": ".codex",
       "Claude Code": "Codex",
       "CLAUDE.md": "AGENTS.md",
       "CLAUDE.local.md": "AGENTS.md",
       "claude.local.md": "AGENTS.md"
     },
-    "claude->gemini": {
+    gemini: {
       ".claude": ".gemini",
       "Claude Code": "Gemini",
       "CLAUDE.md": "GEMINI.md",
@@ -66,7 +70,7 @@ export const mockConfig: SyncConfig = {
   },
   runtime: {
     python_executable: "python/bin/python.exe",
-    script_path: "sync_from_claude.py",
+    script_path: "sync_agents.py",
     config_path: "cc-sync.config.json"
   }
 };

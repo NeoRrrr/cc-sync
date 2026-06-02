@@ -1,8 +1,8 @@
 import { startTransition, useEffect, useRef, useState } from "react";
-import { getAvailableSkills, listTargetSkills, loadConfig, openPath, pickFolder, previewSync, runSync, saveConfig } from "./lib/client";
+import { getAvailableSkills, listTargetSkills, loadConfig, openPath, pickFile, pickFolder, previewSync, runSync, saveConfig } from "./lib/client";
 import { dictionaries, loadLanguage, saveLanguage, type Language } from "./i18n";
 import { applyTheme, loadTheme, saveTheme, watchSystemTheme, type Theme } from "./theme";
-import type { ActivityLog, AvailableSkillOption, Endpoint, PlanOperation, SyncConfig, SyncMode, SyncPlan, SyncScope, TargetSkill } from "./types";
+import type { ActivityLog, AvailableSkillOption, Endpoint, PlanOperation, SourceConfig, SyncConfig, SyncMode, SyncPlan, SyncScope, TargetSkill } from "./types";
 import { SegmentedControl } from "./components/SegmentedControl";
 import { Modal } from "./components/Modal";
 import { SubpageHeader } from "./components/SubpageHeader";
@@ -15,6 +15,7 @@ const APP_VERSION = "0.1.0";
 
 type View =
   | { name: "main" }
+  | { name: "sources" }
   | { name: "commonSkills" }
   | { name: "logs" }
   | { name: "settings" }
@@ -33,7 +34,7 @@ function appendLog(
 }
 
 function sourceSkillDirs(config: SyncConfig): string[] {
-  return config.endpoints[config.sync.source]?.skills_dirs ?? [];
+  return config.sources.skills_dirs ?? [];
 }
 
 /* 按目标聚合同步计划。 */
@@ -78,15 +79,20 @@ export default function App() {
   const [availableSkills, setAvailableSkills] = useState<AvailableSkillOption[]>([]);
   const [diskSkills, setDiskSkills] = useState<Record<string, TargetSkill[]>>({});
   const [replacementDraft, setReplacementDraft] = useState("");
+  const [sourceDrafts, setSourceDrafts] = useState<Record<keyof SourceConfig, string>>({
+    md_files: "",
+    skills_dirs: "",
+    docs_dirs: "",
+  });
   const text = dictionaries[language];
 
   async function refreshAvailableSkills(cfg: SyncConfig) {
     try {
       const skills = await getAvailableSkills(sourceSkillDirs(cfg));
       setAvailableSkills(skills);
-      appendLog(setLogs, "info", `cc-sync-ui loaded ${skills.length} skills`);
+      appendLog(setLogs, "info", `cc-sync loaded ${skills.length} skills`);
     } catch (err) {
-      appendLog(setLogs, "error", `cc-sync-ui failed to load skills: ${String(err)}`);
+      appendLog(setLogs, "error", `cc-sync failed to load skills: ${String(err)}`);
     }
   }
 
@@ -131,13 +137,12 @@ export default function App() {
     saveLanguage(language);
   }, [language]);
 
-  /* 进入高级配置子页时，把当前 源->目标 的替换规则填入草稿。 */
+  /* 进入高级配置子页时，把当前目标的替换规则填入草稿。 */
   useEffect(() => {
     if (view.name !== "advanced" || !config) {
       return;
     }
-    const pair = `${config.sync.source}->${view.target}`;
-    const reps = config.replacements[pair] ?? {};
+    const reps = config.replacements[view.target] ?? {};
     setReplacementDraft(
       Object.entries(reps)
         .map(([source, destination]) => `${source} => ${destination}`)
@@ -193,19 +198,19 @@ export default function App() {
       const picked = await pickFolder(config?.project_root);
       if (picked) {
         setConfig((current) => (current ? { ...current, project_root: picked } : current));
-        appendLog(setLogs, "info", `cc-sync-ui workspace set: ${picked}`);
+        appendLog(setLogs, "info", `cc-sync workspace set: ${picked}`);
       }
     } catch (error) {
-      appendLog(setLogs, "error", `cc-sync-ui pick folder failed: ${String(error)}`);
+      appendLog(setLogs, "error", `cc-sync pick folder failed: ${String(error)}`);
     }
   }
 
   async function openLocation(path: string, label: string) {
     try {
       await openPath(path);
-      appendLog(setLogs, "info", `cc-sync-ui opened ${label}: ${path}`);
+      appendLog(setLogs, "info", `cc-sync opened ${label}: ${path}`);
     } catch (error) {
-      appendLog(setLogs, "error", `cc-sync-ui failed to open ${label}: ${String(error)}`);
+      appendLog(setLogs, "error", `cc-sync failed to open ${label}: ${String(error)}`);
     }
   }
 
@@ -248,22 +253,6 @@ export default function App() {
     }
   }
 
-  function setSource(sourceId: string) {
-    setConfig((current) => {
-      if (!current) return current;
-      const next: SyncConfig = {
-        ...current,
-        sync: {
-          source: sourceId,
-          targets: current.sync.targets.filter((id) => id !== sourceId),
-        },
-      };
-      // 源变了 → 重扫该源的可选技能。
-      void refreshAvailableSkills(next);
-      return next;
-    });
-  }
-
   function toggleTarget(targetId: string, on: boolean) {
     setConfig((current) => {
       if (!current) return current;
@@ -304,6 +293,38 @@ export default function App() {
     });
   }
 
+  function updateSourceList(kind: keyof SourceConfig, values: string[]) {
+    setConfig((current) => {
+      if (!current) return current;
+      const next = {
+        ...current,
+        sources: { ...current.sources, [kind]: Array.from(new Set(values.filter(Boolean))) },
+      };
+      if (kind === "skills_dirs") {
+        void refreshAvailableSkills(next);
+      }
+      return next;
+    });
+  }
+
+  function addSourcePath(kind: keyof SourceConfig, value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || !config) return;
+    updateSourceList(kind, [...config.sources[kind], trimmed]);
+    setSourceDrafts((current) => ({ ...current, [kind]: "" }));
+  }
+
+  async function chooseSourcePath(kind: keyof SourceConfig) {
+    try {
+      const picked = kind === "md_files" ? await pickFile(config?.project_root) : await pickFolder(config?.project_root);
+      if (picked) {
+        addSourcePath(kind, picked);
+      }
+    } catch (error) {
+      appendLog(setLogs, "error", `cc-sync pick source failed: ${String(error)}`);
+    }
+  }
+
   if (!config) {
     return (
       <main className="mx-auto flex min-h-screen max-w-[1140px] flex-col items-center justify-center px-6 font-semibold text-dim">
@@ -312,15 +333,74 @@ export default function App() {
     );
   }
 
-  const sourceId = config.sync.source;
+  const activeConfig = config;
   const endpointEntries = Object.entries(config.endpoints) as Array<[string, Endpoint]>;
-  const targetEntries = endpointEntries.filter(([id]) => id !== sourceId);
+  const targetEntries = endpointEntries;
   const operationsByTarget = groupOperationsByTarget(plan);
   const confirmOperationsByTarget = groupOperationsByTarget(confirmPlan);
   const syncErrors = plan?.errors.slice(0, 3) ?? [];
+  const syncWarnings = plan?.warnings?.slice(0, 3) ?? [];
   const unselectLabel = (skill: string) => `${text.app.cancel} ${skill}`;
 
   const fieldLabel = "text-[0.78rem] font-bold uppercase tracking-[0.05em] text-dim";
+  const sourceEditors: Array<{ kind: keyof SourceConfig; title: string; pickTitle: string }> = [
+    { kind: "md_files", title: text.app.mdSources, pickTitle: text.app.chooseFile },
+    { kind: "skills_dirs", title: text.app.skillSourceDirs, pickTitle: text.app.chooseFolder },
+    { kind: "docs_dirs", title: text.app.docsSourceDirs, pickTitle: text.app.chooseFolder },
+  ];
+
+  function renderSourceEditor({ kind, title, pickTitle }: { kind: keyof SourceConfig; title: string; pickTitle: string }) {
+    const values = activeConfig.sources[kind] ?? [];
+    return (
+      <div key={kind} className="flex flex-col gap-3 rounded-xl border border-line bg-subtle p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="m-0 text-base font-extrabold text-main">{title}</p>
+          <span className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-[0.74rem] font-extrabold text-dim">
+            {values.length}
+          </span>
+        </div>
+        <div className="grid gap-2">
+          {values.length ? (
+            values.map((value, index) => (
+              <div key={`${kind}-${value}`} className="source-path-row">
+                <code className="source-path-value" title={value}>
+                  {value}
+                </code>
+                <button type="button" className="mini-action source-action" onClick={() => void openLocation(value, title)}>
+                  {text.app.openLocation}
+                </button>
+                <button type="button" className="mini-action source-action" onClick={() => updateSourceList(kind, values.filter((_, i) => i !== index))}>
+                  {text.app.remove}
+                </button>
+              </div>
+            ))
+          ) : (
+            <span className="muted">{text.app.noSources}</span>
+          )}
+        </div>
+        <div className="source-add-row">
+          <input
+            className="min-w-0"
+            value={sourceDrafts[kind]}
+            placeholder={text.app.pathPlaceholder}
+            onChange={(event) => setSourceDrafts((current) => ({ ...current, [kind]: event.target.value }))}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addSourcePath(kind, sourceDrafts[kind]);
+              }
+            }}
+          />
+          <button type="button" className="mini-action source-action" title={pickTitle} onClick={() => void chooseSourcePath(kind)}>
+            {text.app.chooseFolder}
+          </button>
+          <button type="button" className="mini-action source-action" onClick={() => addSourcePath(kind, sourceDrafts[kind])}>
+            {text.app.add}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1140px] flex-col gap-6 px-6 pb-14 pt-9">
@@ -337,6 +417,9 @@ export default function App() {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
+              <button type="button" className="utility-action" onClick={() => setView({ name: "sources" })}>
+                {text.app.inputSources}
+              </button>
               <button type="button" className="utility-action" onClick={() => setView({ name: "commonSkills" })}>
                 {text.app.commonSkills}
               </button>
@@ -368,15 +451,6 @@ export default function App() {
               </div>
             </label>
             <label className="flex flex-col gap-2.5">
-              <span className={fieldLabel}>{text.app.source}</span>
-              <SegmentedControl<string>
-                ariaLabel={text.app.source}
-                value={sourceId}
-                onChange={setSource}
-                options={endpointEntries.map(([id, endpoint]) => ({ value: id, label: endpoint.label || id }))}
-              />
-            </label>
-            <label className="flex flex-col gap-2.5">
               <span className={fieldLabel}>{text.app.scope}</span>
               <SegmentedControl<SyncScope>
                 ariaLabel={text.app.scope}
@@ -400,6 +474,41 @@ export default function App() {
               ))}
             </section>
           )}
+
+          {!!syncWarnings.length && (
+            <section className="warning-strip">
+              <strong>{text.app.syncWarnings}</strong>
+              {syncWarnings.map((warning) => (
+                <code key={warning}>{warning}</code>
+              ))}
+            </section>
+          )}
+
+          <section
+            className="flex flex-col gap-3.5 rounded-2xl border border-line bg-card px-[22px] py-[18px] shadow-[var(--shadow-sm)]"
+            aria-label={text.app.inputSources}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className={fieldLabel}>{text.app.inputSources}</span>
+              <button type="button" className="mini-action" onClick={() => setView({ name: "sources" })}>
+                {text.app.configure}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3 max-md:grid-cols-1">
+              <div className="rounded-xl border border-line bg-subtle p-4">
+                <span className="block text-[0.74rem] font-bold text-dim">{text.app.mdSources}</span>
+                <strong className="text-[1.25rem] font-extrabold text-main">{config.sources.md_files.length}</strong>
+              </div>
+              <div className="rounded-xl border border-line bg-subtle p-4">
+                <span className="block text-[0.74rem] font-bold text-dim">{text.app.skillSourceDirs}</span>
+                <strong className="text-[1.25rem] font-extrabold text-main">{config.sources.skills_dirs.length}</strong>
+              </div>
+              <div className="rounded-xl border border-line bg-subtle p-4">
+                <span className="block text-[0.74rem] font-bold text-dim">{text.app.docsSourceDirs}</span>
+                <strong className="text-[1.25rem] font-extrabold text-main">{config.sources.docs_dirs.length}</strong>
+              </div>
+            </div>
+          </section>
 
           <section
             className="flex flex-col gap-3.5 rounded-2xl border border-line bg-card px-[22px] py-[18px] shadow-[var(--shadow-sm)]"
@@ -446,6 +555,15 @@ export default function App() {
             })}
           </section>
         </>
+      )}
+
+      {view.name === "sources" && (
+        <section className="flex flex-col gap-5">
+          <SubpageHeader title={text.app.inputSources} backLabel={text.app.back} onBack={() => setView({ name: "main" })} />
+          <div className="flex flex-col gap-4 rounded-2xl border border-line bg-card p-6 shadow-[var(--shadow-sm)]">
+            {sourceEditors.map(renderSourceEditor)}
+          </div>
+        </section>
       )}
 
       {view.name === "commonSkills" && (
@@ -563,7 +681,7 @@ export default function App() {
             </div>
 
             <div className="flex flex-col items-start gap-3">
-              <p className="m-0 text-base font-extrabold text-main">{text.app.replacements}（{sourceId} → {view.target}）</p>
+              <p className="m-0 text-base font-extrabold text-main">{text.app.replacements}（{text.app.inputSources} → {view.target}）</p>
               <textarea
                 rows={8}
                 placeholder={text.app.replacementPlaceholder}
@@ -582,7 +700,7 @@ export default function App() {
                       }
                       return record;
                     }, {});
-                  updatePairReplacements(`${sourceId}->${view.target}`, replacements);
+                  updatePairReplacements(view.target, replacements);
                 }}
               />
             </div>
@@ -614,6 +732,15 @@ export default function App() {
               <strong>{text.app.syncErrors}</strong>
               {confirmPlan.errors.map((error) => (
                 <code key={error}>{error}</code>
+              ))}
+            </div>
+          )}
+
+          {!!confirmPlan.warnings?.length && (
+            <div className="warning-strip">
+              <strong>{text.app.syncWarnings}</strong>
+              {confirmPlan.warnings.map((warning) => (
+                <code key={warning}>{warning}</code>
               ))}
             </div>
           )}

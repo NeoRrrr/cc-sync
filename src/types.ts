@@ -7,7 +7,13 @@ export type RuntimeConfig = {
   config_path: string;
 };
 
-/* 对等端点：每个 agent 同形，既能当源也能当目标。 */
+export type SourceConfig = {
+  md_files: string[];
+  skills_dirs: string[];
+  docs_dirs: string[];
+};
+
+/* 输出端点：每个 agent 的写入目标。 */
 export type Endpoint = {
   label: string;
   dir: string;
@@ -20,7 +26,7 @@ export type Endpoint = {
 };
 
 export type SyncSpec = {
-  source: string;
+  source?: string;
   targets: string[];
 };
 
@@ -36,6 +42,7 @@ export type SyncConfig = {
   overwrite_md: boolean;
   fallback_to_copy: boolean;
   verbose: boolean;
+  sources: SourceConfig;
   endpoints: Record<string, Endpoint>;
   sync: SyncSpec;
   skill_selection: SkillSelection;
@@ -47,6 +54,7 @@ export type PlanOperation = {
   type: "md" | "skills" | "docs";
   target: string;
   name?: string;
+  sources?: string[];
   main_src?: string;
   local_src?: string | null;
   src?: string | null;
@@ -63,10 +71,13 @@ export type SyncPlan = {
   scope: SyncScope;
   main_md: string | null;
   local_md: string | null;
+  md_sources?: string[];
   docs_src: string | null;
+  docs_source_roots?: string[];
   skill_source_roots: string[];
   operations: PlanOperation[];
   errors: string[];
+  warnings?: string[];
   config_path?: string;
   success?: boolean;
   executed?: boolean;
@@ -80,6 +91,8 @@ export type ActivityLog = {
 
 export type AvailableSkillOption = {
   name: string;
+  display_name?: string | null;
+  description?: string | null;
   paths: string[];
 };
 
