@@ -103,6 +103,14 @@ export async function openPath(path: string): Promise<void> {
   await invoke("open_path", { path });
 }
 
+/* 用默认浏览器打开 URL(不会像 open_path 那样把 URL 当文件路径处理)。 */
+export async function openUrl(url: string): Promise<void> {
+  if (!inTauri()) {
+    return;
+  }
+  await invoke("open_url", { url });
+}
+
 /* 列出某个 target 的 skills 目录里实际存在的技能及其磁盘状态(链接/复制/失效)。 */
 export async function listTargetSkills(target: string, config?: SyncConfig): Promise<TargetSkill[]> {
   if (!inTauri()) {

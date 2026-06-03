@@ -628,6 +628,17 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    // 用默认浏览器打开 URL。不要走 open_path——那个按文件路径处理，URL "不存在" 会回退到
+    // .parent() 把最后一段(如版本 tag)切掉，打开错误页。explorer 收到 http(s) URL 会直接交给浏览器。
+    Command::new("explorer.exe")
+        .arg(&url)
+        .spawn()
+        .map_err(|err| format!("failed to open url {}: {}", url, err))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -960,6 +971,7 @@ fn main() {
             load_config_data,
             save_config_data,
             open_path,
+            open_url,
             hide_main_window,
             exit_app,
             run_sync_preview,

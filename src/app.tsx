@@ -12,6 +12,7 @@ import {
   loadConfig,
   onUpdateProgress,
   openPath,
+  openUrl,
   pickFile,
   pickFolder,
   previewSync,
@@ -492,9 +493,16 @@ export default function App() {
   }
 
   async function openLocation(path: string, label: string) {
+    // 卡片里的目标路径是相对 project_root 的(如 ".codex/skills"、"AGENTS.md")，
+    // 要先拼成绝对路径再打开,否则 open_path 按相对 CWD 处理会打不开或打开错位置。
+    const root = config?.project_root?.trim() ?? "";
+    const isAbsolute = /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("/");
+    const sep = root.includes("\\") ? "\\" : "/";
+    const resolved =
+      !path || isAbsolute || !root ? path : `${root.replace(/[\\/]+$/, "")}${sep}${path.replace(/[\\/]+/g, sep)}`;
     try {
-      await openPath(path);
-      appendLog(setLogs, "info", `cc-sync opened ${label}: ${path}`);
+      await openPath(resolved);
+      appendLog(setLogs, "info", `cc-sync opened ${label}: ${resolved}`);
     } catch (error) {
       appendLog(setLogs, "error", `cc-sync failed to open ${label}: ${String(error)}`);
     }
@@ -724,6 +732,9 @@ export default function App() {
           <header className="flex flex-wrap items-center justify-between gap-4 max-md:items-start">
             <div className="flex items-center gap-[14px]">
               <p className="m-0 text-[1.4rem] font-extrabold tracking-[-0.02em] text-primary">{text.app.title}</p>
+              {appVersionStr && (
+                <span className="text-[0.72rem] font-medium text-dim" title={text.app.version}>v{appVersionStr}</span>
+              )}
               <button type="button" className="icon-btn" aria-label={text.app.settings} title={text.app.settings} onClick={() => setView({ name: "settings" })}>
                 <GearIcon />
               </button>
@@ -1074,7 +1085,11 @@ export default function App() {
           showHeaderClose={!updateBusy}
           onClose={() => (updateBusy ? undefined : setShowUpdate(false))}
         >
-          {update.notes && <pre className="update-notes">{update.notes}</pre>}
+          {update.notes && (
+            <p className="m-0 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[0.85rem] text-dim">
+              {update.notes}
+            </p>
+          )}
           <p className="m-0 text-[0.9rem] text-main">{text.app.updateWarning}</p>
           {updateBusy && <p className="m-0 text-[0.9rem] text-dim">{text.app.updateDownloading(updateProgress)}</p>}
           <div className="mt-1 flex flex-wrap gap-3">
@@ -1102,12 +1117,9 @@ export default function App() {
               type="button"
               className="utility-action"
               disabled={updateBusy}
-              onClick={() => update.release_url && void openPath(update.release_url)}
+              onClick={() => update.release_url && void openUrl(update.release_url)}
             >
               {text.app.updateOpenPage}
-            </button>
-            <button type="button" className="utility-action" disabled={updateBusy} onClick={() => setShowUpdate(false)}>
-              {text.app.cancel}
             </button>
           </div>
         </Modal>
