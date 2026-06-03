@@ -175,8 +175,8 @@ export async function downloadAndStage(url: string): Promise<string> {
 }
 
 /* 写 helper 并退出 app，由 helper 完成替换与重启。 */
-export async function applyUpdate(staging: string): Promise<void> {
-  await invoke("apply_update", { staging });
+export async function applyUpdate(): Promise<void> {
+  await invoke("apply_update");
 }
 
 /* 监听下载进度(0-100)。返回取消监听的函数。 */

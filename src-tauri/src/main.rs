@@ -884,6 +884,9 @@ async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String
             .build()
             .map_err(|err| err.to_string())?;
         let mut resp = client.get(&url).send().map_err(|err| err.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("下载失败：HTTP {}", resp.status()));
+        }
         let total = resp.content_length().unwrap_or(0);
         let mut file = fs::File::create(&zip_for_dl).map_err(|err| err.to_string())?;
         let mut downloaded: u64 = 0;
@@ -927,14 +930,16 @@ async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String
 }
 
 #[tauri::command]
-fn apply_update(app: tauri::AppHandle, staging: String) -> Result<(), String> {
+fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
     let install_dir = app_dir(); // 已有:exe 所在目录
     let pid = std::process::id();
     let cleanup = std::env::temp_dir().join("cc-sync-update");
+    // 零信任:staging 目录由后端按固定规则重算，不接收前端传入的字符串(避免命令注入)。
+    let staging = cleanup.join("stage");
     let bat = build_update_bat(
         pid,
         &install_dir.to_string_lossy(),
-        &staging,
+        &staging.to_string_lossy(),
         &cleanup.to_string_lossy(),
     );
     let bat_path = std::env::temp_dir().join("cc-sync-apply-update.bat");

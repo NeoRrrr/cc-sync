@@ -1087,8 +1087,8 @@ export default function App() {
                 setUpdateBusy(true);
                 const stop = await onUpdateProgress(setUpdateProgress);
                 try {
-                  const staging = await downloadAndStage(update.download_url);
-                  await applyUpdate(staging); // app 将退出并由 helper 接管
+                  await downloadAndStage(update.download_url);
+                  await applyUpdate(); // app 将退出并由 helper 接管
                 } catch (err) {
                   appendLog(setLogs, "error", String(err));
                   setUpdateBusy(false);
