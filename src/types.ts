@@ -112,3 +112,12 @@ export type TargetSkill = {
   name: string;
   kind: "link" | "copy" | "broken";
 };
+
+export type UpdateInfo = {
+  current: string;
+  latest: string | null;
+  has_update: boolean;
+  download_url: string | null;
+  release_url: string | null;
+  notes: string | null;
+};

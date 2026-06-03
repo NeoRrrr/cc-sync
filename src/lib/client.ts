@@ -1,4 +1,4 @@
-import type { AvailableSkillOption, SyncConfig, SyncPlan, SyncScope, TargetSkill } from "../types";
+import type { AvailableSkillOption, SyncConfig, SyncPlan, SyncScope, TargetSkill, UpdateInfo } from "../types";
 import { mockConfig } from "./mockState";
 
 declare global {
@@ -143,4 +143,47 @@ export async function getAvailableSkills(dirs: string[], config?: SyncConfig): P
   }
 
   return invoke<AvailableSkillOption[]>("list_available_skills", { dirs, config });
+}
+
+/* 取当前 app 版本(来源 Rust package_info，单一真相)。 */
+export async function appVersion(): Promise<string | null> {
+  if (!inTauri()) {
+    return null;
+  }
+  try {
+    return await invoke<string>("app_version");
+  } catch {
+    return null;
+  }
+}
+
+/* 静默检查更新。失败(限流/断网)时返回 null，调用方应忽略。 */
+export async function checkUpdate(): Promise<UpdateInfo | null> {
+  if (!inTauri()) {
+    return null;
+  }
+  try {
+    return await invoke<UpdateInfo>("check_update");
+  } catch {
+    return null;
+  }
+}
+
+/* 下载并暂存更新包，返回 staging 路径。 */
+export async function downloadAndStage(url: string): Promise<string> {
+  return invoke<string>("download_and_stage", { url });
+}
+
+/* 写 helper 并退出 app，由 helper 完成替换与重启。 */
+export async function applyUpdate(staging: string): Promise<void> {
+  await invoke("apply_update", { staging });
+}
+
+/* 监听下载进度(0-100)。返回取消监听的函数。 */
+export async function onUpdateProgress(handler: (pct: number) => void): Promise<() => void> {
+  if (!inTauri()) {
+    return () => {};
+  }
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<number>("update-progress", (event) => handler(event.payload));
 }
