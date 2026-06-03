@@ -132,6 +132,24 @@ fn app_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
+fn build_update_bat(pid: u32, install_dir: &str, staging: &str, cleanup_dir: &str) -> String {
+    // 注意:绝不加 /MIR /PURGE;/XF 排除用户的配置与状态，升级永不覆盖它们。
+    format!(
+        "@echo off\r\n\
+chcp 65001 >nul\r\n\
+:waitloop\r\n\
+tasklist /FI \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul && (timeout /t 1 /nobreak >nul & goto waitloop)\r\n\
+robocopy \"{staging}\\CC Sync\" \"{install}\" /E /R:3 /W:1 /XF cc-sync.config.json cc-sync.state.json cc-sync.state.json.tmp *.bak >nul\r\n\
+start \"\" \"{install}\\CC Sync.exe\"\r\n\
+rmdir /s /q \"{cleanup}\" >nul 2>&1\r\n\
+del \"%~f0\"\r\n",
+        pid = pid,
+        staging = staging,
+        install = install_dir,
+        cleanup = cleanup_dir,
+    )
+}
+
 #[cfg(debug_assertions)]
 fn default_config_path() -> PathBuf {
     let portable_config = app_dir().join("cc-sync.config.json");
@@ -908,6 +926,31 @@ async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String
     Ok(stage.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn apply_update(app: tauri::AppHandle, staging: String) -> Result<(), String> {
+    let install_dir = app_dir(); // 已有:exe 所在目录
+    let pid = std::process::id();
+    let cleanup = std::env::temp_dir().join("cc-sync-update");
+    let bat = build_update_bat(
+        pid,
+        &install_dir.to_string_lossy(),
+        &staging,
+        &cleanup.to_string_lossy(),
+    );
+    let bat_path = std::env::temp_dir().join("cc-sync-apply-update.bat");
+    fs::write(&bat_path, bat).map_err(|err| err.to_string())?;
+
+    // detached 启动 helper(用 start 脱离父进程，这样本 app 退出后它仍在跑)。
+    Command::new("cmd")
+        .args(["/c", "start", "", "/min"])
+        .arg(&bat_path)
+        .spawn()
+        .map_err(|err| err.to_string())?;
+
+    app.exit(0); // 退出，让 helper 能替换被锁的 exe
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(TrayState {
@@ -932,7 +975,8 @@ fn main() {
             pick_file,
             app_version,
             check_update,
-            download_and_stage
+            download_and_stage,
+            apply_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1002,5 +1046,27 @@ mod tests {
         }"#).unwrap();
         let info = parse_release(&json, "0.1.3");
         assert!(!info.has_update);
+    }
+
+    #[test]
+    fn update_bat_waits_relaunches_and_protects_user_files() {
+        let bat = build_update_bat(
+            1234,
+            r"C:\Users\Admin\Dawn\Trunk\tools\AI\CC Sync",
+            r"C:\Temp\cc-sync-update\stage",
+            r"C:\Temp\cc-sync-update",
+        );
+        // 等本进程退出
+        assert!(bat.contains("PID eq 1234"));
+        // robocopy 覆盖整包，但排除用户配置/状态
+        assert!(bat.contains("robocopy"));
+        assert!(bat.contains("/XF cc-sync.config.json cc-sync.state.json"));
+        // 不能出现 /MIR 或 /PURGE(会删用户文件)
+        assert!(!bat.contains("/MIR"));
+        assert!(!bat.contains("/PURGE"));
+        // 升级后重启
+        assert!(bat.contains(r"CC Sync.exe"));
+        // 自删
+        assert!(bat.contains("del "));
     }
 }
