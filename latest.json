@@ -1,0 +1,6 @@
+{
+  "version": "0.1.3",
+  "notes": "docs symlink 不可用时不再静默回退、md 缺失不阻断同步、原子写配置、命令执行信任边界、配置加载失败明确报错、目录符号链接删除修复，以及 README/打包脚本去个人化。",
+  "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.3/CC.Sync.portable.zip",
+  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.3"
+}

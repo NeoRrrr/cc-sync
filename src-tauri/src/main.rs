@@ -80,36 +80,27 @@ struct UpdateInfo {
     notes: Option<String>,
 }
 
-fn parse_release(json: &Value, current: &str) -> UpdateInfo {
-    let tag = json.get("tag_name").and_then(|v| v.as_str());
-    let release_url = json
-        .get("html_url")
+fn parse_manifest(json: &Value, current: &str) -> UpdateInfo {
+    // 从 raw.githubusercontent.com 上的 latest.json 解析。用 raw 文件而非 GitHub API:
+    // anon API 限额 60/hr 按 IP 共享，公司出口 IP 容易被打满导致检查静默失效;
+    // raw 文件不受该限额，公司网也可靠。
+    let latest = json.get("version").and_then(|v| v.as_str());
+    let download_url = json
+        .get("download_url")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let notes = json.get("body").and_then(|v| v.as_str()).map(String::from);
-    let download_url = json
-        .get("assets")
-        .and_then(|a| a.as_array())
-        .and_then(|assets| {
-            assets.iter().find_map(|asset| {
-                let name = asset.get("name").and_then(|n| n.as_str())?;
-                if name.to_lowercase().ends_with(".zip") {
-                    asset
-                        .get("browser_download_url")
-                        .and_then(|u| u.as_str())
-                        .map(String::from)
-                } else {
-                    None
-                }
-            })
-        });
+    let release_url = json
+        .get("release_url")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let notes = json.get("notes").and_then(|v| v.as_str()).map(String::from);
 
     let has_update =
-        tag.map(|t| is_newer(t, current)).unwrap_or(false) && download_url.is_some();
+        latest.map(|l| is_newer(l, current)).unwrap_or(false) && download_url.is_some();
 
     UpdateInfo {
         current: current.to_string(),
-        latest: tag.map(String::from),
+        latest: latest.map(String::from),
         has_update,
         download_url,
         release_url,
@@ -821,8 +812,8 @@ async fn pick_file(
     Ok(picked.map(|file_path| file_path.to_string()))
 }
 
-const RELEASES_LATEST_URL: &str =
-    "https://api.github.com/repos/NeoRrrr/cc-sync/releases/latest";
+const MANIFEST_URL: &str =
+    "https://raw.githubusercontent.com/NeoRrrr/cc-sync/main/latest.json";
 
 #[tauri::command]
 fn app_version(app: tauri::AppHandle) -> String {
@@ -840,13 +831,12 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
             .build()
             .map_err(|err| err.to_string())?;
         let resp = client
-            .get(RELEASES_LATEST_URL)
-            .header("Accept", "application/vnd.github+json")
+            .get(MANIFEST_URL)
             .send()
             .map_err(|err| err.to_string())?;
         if !resp.status().is_success() {
-            // 限流(403)/无 release(404)/网络异常都走这里
-            return Err(format!("github api status {}", resp.status()));
+            // 网络异常 / 文件暂不可用都走这里
+            return Err(format!("manifest status {}", resp.status()));
         }
         resp.json::<Value>().map_err(|err| err.to_string())
     })
@@ -855,7 +845,7 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
 
     // 失败一律软返回 has_update=false，前端静默，不打扰用户。
     match fetched {
-        Ok(json) => Ok(parse_release(&json, &current)),
+        Ok(json) => Ok(parse_manifest(&json, &current)),
         Err(_) => Ok(UpdateInfo {
             current,
             latest: None,
@@ -1024,19 +1014,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_release_picks_zip_asset_and_flags_update() {
+    fn parse_manifest_reads_fields_and_flags_update() {
         let json: Value = serde_json::from_str(r#"{
-            "tag_name": "v0.1.4",
-            "html_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4",
-            "body": "notes here",
-            "assets": [
-                {"name": "CC.Sync.portable.zip", "browser_download_url": "https://example.com/p.zip"},
-                {"name": "other.txt", "browser_download_url": "https://example.com/o.txt"}
-            ]
+            "version": "0.1.4",
+            "notes": "notes here",
+            "download_url": "https://example.com/p.zip",
+            "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"
         }"#).unwrap();
 
-        let info = parse_release(&json, "0.1.3");
-        assert_eq!(info.latest.as_deref(), Some("v0.1.4"));
+        let info = parse_manifest(&json, "0.1.3");
+        assert_eq!(info.latest.as_deref(), Some("0.1.4"));
         assert!(info.has_update);
         assert_eq!(info.download_url.as_deref(), Some("https://example.com/p.zip"));
         assert_eq!(info.release_url.as_deref(), Some("https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"));
@@ -1044,12 +1031,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_release_no_update_when_same_version() {
+    fn parse_manifest_no_update_when_same_version() {
         let json: Value = serde_json::from_str(r#"{
-            "tag_name": "v0.1.3",
-            "assets": [{"name": "x.zip", "browser_download_url": "https://example.com/x.zip"}]
+            "version": "0.1.3",
+            "download_url": "https://example.com/x.zip"
         }"#).unwrap();
-        let info = parse_release(&json, "0.1.3");
+        let info = parse_manifest(&json, "0.1.3");
         assert!(!info.has_update);
     }
 
