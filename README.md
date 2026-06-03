@@ -85,6 +85,22 @@ CC Sync/
 
 ### 源码开发运行
 
+macOS / Linux：
+
+```bash
+cd cc-sync
+./run.sh
+```
+
+Windows：
+
+```powershell
+cd cc-sync
+.\run.bat
+```
+
+等价的手动命令：
+
 ```powershell
 cd cc-sync
 npm install
