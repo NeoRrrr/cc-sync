@@ -70,6 +70,53 @@ struct TargetSkill {
     kind: String, // "link" = junction/符号链接且目标存在; "copy" = 真实文件夹; "broken" = 失效链接
 }
 
+#[derive(Serialize)]
+struct UpdateInfo {
+    current: String,
+    latest: Option<String>,
+    has_update: bool,
+    download_url: Option<String>,
+    release_url: Option<String>,
+    notes: Option<String>,
+}
+
+fn parse_release(json: &Value, current: &str) -> UpdateInfo {
+    let tag = json.get("tag_name").and_then(|v| v.as_str());
+    let release_url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let notes = json.get("body").and_then(|v| v.as_str()).map(String::from);
+    let download_url = json
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|assets| {
+            assets.iter().find_map(|asset| {
+                let name = asset.get("name").and_then(|n| n.as_str())?;
+                if name.to_lowercase().ends_with(".zip") {
+                    asset
+                        .get("browser_download_url")
+                        .and_then(|u| u.as_str())
+                        .map(String::from)
+                } else {
+                    None
+                }
+            })
+        });
+
+    let has_update =
+        tag.map(|t| is_newer(t, current)).unwrap_or(false) && download_url.is_some();
+
+    UpdateInfo {
+        current: current.to_string(),
+        latest: tag.map(String::from),
+        has_update,
+        download_url,
+        release_url,
+        notes,
+    }
+}
+
 fn source_project_root(config_path: &Path) -> PathBuf {
     config_path
         .parent()
@@ -817,5 +864,35 @@ mod tests {
     fn newer_is_false_for_garbage() {
         assert!(!is_newer("not-a-version", "0.1.3"));
         assert!(!is_newer("0.1.4", ""));
+    }
+
+    #[test]
+    fn parse_release_picks_zip_asset_and_flags_update() {
+        let json: Value = serde_json::from_str(r#"{
+            "tag_name": "v0.1.4",
+            "html_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4",
+            "body": "notes here",
+            "assets": [
+                {"name": "CC.Sync.portable.zip", "browser_download_url": "https://example.com/p.zip"},
+                {"name": "other.txt", "browser_download_url": "https://example.com/o.txt"}
+            ]
+        }"#).unwrap();
+
+        let info = parse_release(&json, "0.1.3");
+        assert_eq!(info.latest.as_deref(), Some("v0.1.4"));
+        assert!(info.has_update);
+        assert_eq!(info.download_url.as_deref(), Some("https://example.com/p.zip"));
+        assert_eq!(info.release_url.as_deref(), Some("https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"));
+        assert_eq!(info.notes.as_deref(), Some("notes here"));
+    }
+
+    #[test]
+    fn parse_release_no_update_when_same_version() {
+        let json: Value = serde_json::from_str(r#"{
+            "tag_name": "v0.1.3",
+            "assets": [{"name": "x.zip", "browser_download_url": "https://example.com/x.zip"}]
+        }"#).unwrap();
+        let info = parse_release(&json, "0.1.3");
+        assert!(!info.has_update);
     }
 }
