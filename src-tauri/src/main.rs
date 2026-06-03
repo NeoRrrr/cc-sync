@@ -849,6 +849,65 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     }
 }
 
+#[tauri::command]
+async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    let root = std::env::temp_dir().join("cc-sync-update");
+    let _ = fs::remove_dir_all(&root); // 清理上一次残留
+    fs::create_dir_all(&root).map_err(|err| err.to_string())?;
+    let zip_path = root.join("pkg.zip");
+    let stage = root.join("stage");
+
+    // 下载(分块读取 + 进度事件)。reqwest::blocking::Response 实现 Read。
+    let app_for_dl = app.clone();
+    let zip_for_dl = zip_path.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("cc-sync-updater")
+            .build()
+            .map_err(|err| err.to_string())?;
+        let mut resp = client.get(&url).send().map_err(|err| err.to_string())?;
+        let total = resp.content_length().unwrap_or(0);
+        let mut file = fs::File::create(&zip_for_dl).map_err(|err| err.to_string())?;
+        let mut downloaded: u64 = 0;
+        let mut buf = [0u8; 65536];
+        loop {
+            let read = std::io::Read::read(&mut resp, &mut buf).map_err(|err| err.to_string())?;
+            if read == 0 {
+                break;
+            }
+            std::io::Write::write_all(&mut file, &buf[..read]).map_err(|err| err.to_string())?;
+            downloaded += read as u64;
+            let pct = if total > 0 { (downloaded * 100 / total) as u32 } else { 0 };
+            let _ = app_for_dl.emit("update-progress", pct);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())??;
+
+    // 解压(PowerShell Expand-Archive，免新依赖)。
+    let command = format!(
+        "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+        zip_path.display(),
+        stage.display()
+    );
+    let status = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &command])
+        .status()
+        .map_err(|err| err.to_string())?;
+    if !status.success() {
+        return Err("解压更新包失败".to_string());
+    }
+
+    // 校验:解压物里必须有 CC Sync\CC Sync.exe。
+    let exe = stage.join("CC Sync").join("CC Sync.exe");
+    if !exe.exists() {
+        return Err("更新包校验失败：未找到 CC Sync.exe".to_string());
+    }
+
+    Ok(stage.to_string_lossy().to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(TrayState {
@@ -872,7 +931,8 @@ fn main() {
             pick_folder,
             pick_file,
             app_version,
-            check_update
+            check_update,
+            download_and_stage
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
