@@ -39,6 +39,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "skills_dirs": [],
             "docs_dirs": [],
             "mode": "junction",
+            "skills_mode": "junction",
+            "docs_mode": "junction",
         },
         "codex": {
             "label": "Codex",
@@ -49,6 +51,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "skills_dirs": [],
             "docs_dirs": [],
             "mode": "junction",
+            "skills_mode": "junction",
+            "docs_mode": "junction",
         },
         "gemini": {
             "label": "Gemini",
@@ -59,6 +63,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "skills_dirs": [],
             "docs_dirs": [],
             "mode": "junction",
+            "skills_mode": "junction",
+            "docs_mode": "junction",
         },
     },
     # 当前同步目标。
@@ -208,6 +214,8 @@ def migrate_legacy(loaded: dict[str, Any], config_base: Path) -> dict[str, Any]:
             "skills_dirs": [target_cfg["skills_dir"]] if target_cfg.get("skills_dir") else [],
             "docs_dirs": [target_cfg["docs_dir"]] if target_cfg.get("docs_dir") else [],
             "mode": target_cfg.get("mode", "junction"),
+            "skills_mode": target_cfg.get("skills_mode", target_cfg.get("mode", "junction")),
+            "docs_mode": target_cfg.get("docs_mode", target_cfg.get("mode", "junction")),
         }
         replacements[target_id] = reps
         if target_cfg.get("enabled", True):

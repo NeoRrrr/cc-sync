@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -19,6 +20,8 @@ CONFIG: dict[str, Any] = {}
 CONFIG_BASE = PROJECT_ROOT
 OUTPUT_JSON = False
 FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
+STATE_FILE_NAME = "cc-sync.state.json"
+STATE_ENV_VAR = "CC_SYNC_STATE_PATH"
 
 
 def log(msg: str) -> None:
@@ -47,6 +50,13 @@ def resolve_path_list(values: list[str], *, base: Path) -> list[Path]:
     return [resolve_path(value, base=base) for value in values if value]
 
 
+def get_state_path() -> Path:
+    override = os.environ.get(STATE_ENV_VAR)
+    if override:
+        return Path(override)
+    return CONFIG_BASE / STATE_FILE_NAME
+
+
 def normalized_path(path: Path) -> str:
     return os.path.normcase(os.path.abspath(str(path)))
 
@@ -73,6 +83,100 @@ def is_reparse_point(path: Path) -> bool:
     except FileNotFoundError:
         return path.is_symlink()
     return path.is_symlink() or bool(attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fingerprint_path(path: Path) -> dict[str, Any]:
+    if not path.exists() and not path.is_symlink():
+        return {"kind": "missing"}
+
+    if is_reparse_point(path):
+        try:
+            target = normalized_path(path.resolve(strict=False))
+        except OSError:
+            target = None
+        return {"kind": "link", "target": target}
+
+    if path.is_file():
+        stat = path.stat()
+        return {
+            "kind": "file",
+            "size": stat.st_size,
+            "sha256": hash_file(path),
+        }
+
+    if path.is_dir():
+        digest = hashlib.sha256()
+        file_count = 0
+        for child in sorted(path.rglob("*"), key=lambda item: item.relative_to(path).as_posix().lower()):
+            if child.is_dir():
+                continue
+            relative = child.relative_to(path).as_posix()
+            digest.update(relative.encode("utf-8"))
+            digest.update(b"\0")
+            if is_reparse_point(child):
+                try:
+                    target = normalized_path(child.resolve(strict=False))
+                except OSError:
+                    target = ""
+                digest.update(f"link:{target}".encode("utf-8"))
+            elif child.is_file():
+                digest.update(hash_file(child).encode("ascii"))
+            file_count += 1
+        return {
+            "kind": "dir",
+            "files": file_count,
+            "sha256": digest.hexdigest(),
+        }
+
+    return {"kind": "other"}
+
+
+def load_managed_state() -> dict[str, Any]:
+    path = get_state_path()
+    if not path.exists():
+        return {"schema_version": 1, "workspaces": {}}
+
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"schema_version": 1, "workspaces": {}}
+
+    if not isinstance(state, dict):
+        return {"schema_version": 1, "workspaces": {}}
+    state.setdefault("schema_version", 1)
+    state.setdefault("workspaces", {})
+    return state
+
+
+def save_managed_state(state: dict[str, Any]) -> None:
+    path = get_state_path()
+    ensure_dir(path.parent)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp_path.replace(path)
+
+
+def state_workspace_key() -> str:
+    return str(get_project_root())
+
+
+def target_state(state: dict[str, Any], target_id: str, *, create: bool = False) -> dict[str, Any]:
+    workspaces = state.setdefault("workspaces", {}) if create else state.get("workspaces", {})
+    workspace = workspaces.setdefault(state_workspace_key(), {"targets": {}}) if create else workspaces.get(state_workspace_key(), {})
+    targets = workspace.setdefault("targets", {}) if create else workspace.get("targets", {})
+    target = targets.setdefault(target_id, {"skills": {}, "docs": {}}) if create else targets.get(target_id, {})
+    if create:
+        target.setdefault("skills", {})
+        target.setdefault("docs", {})
+    return target
 
 
 def validate_src_dst_safety(src: Path, dst: Path, *, label: str, resolve_paths: bool = True) -> list[str]:
@@ -118,6 +222,15 @@ def validate_plan_safety(operations: list[dict[str, Any]]) -> list[str]:
                     ),
                 )
             )
+        elif operation["type"] == "remove_managed":
+            base = Path(operation["base"])
+            dst = Path(operation["dst"])
+            if normalized_path(base) == normalized_path(dst):
+                errors.append(f"{label} 清理目标不能是目录本身，已阻止: {dst}")
+            elif normalized_path(dst.parent) != normalized_path(base):
+                errors.append(f"{label} 清理目标必须是目标目录的直接子项，已阻止: {dst}")
+            elif not is_path_within(dst, base):
+                errors.append(f"{label} 清理目标不在目标目录内，已阻止: {dst}")
 
     return list(dict.fromkeys(errors))
 
@@ -317,6 +430,11 @@ def get_endpoint(endpoint_id: str) -> dict[str, Any] | None:
     return get_endpoints().get(endpoint_id)
 
 
+def endpoint_sync_mode(endpoint: dict[str, Any], kind: str) -> str:
+    legacy_mode = endpoint.get("mode", "junction")
+    return endpoint.get(f"{kind}_mode") or legacy_mode
+
+
 def get_sync_spec() -> dict[str, Any]:
     return CONFIG.get("sync", {})
 
@@ -365,6 +483,49 @@ def get_source_skill_roots() -> list[Path]:
 
 def get_source_docs_roots() -> list[Path]:
     return resolve_path_list(get_sources().get("docs_dirs", []), base=get_project_root())
+
+
+def managed_items_for_target(state: dict[str, Any], target_id: str, kind: str) -> dict[str, Any]:
+    target = target_state(state, target_id)
+    items = target.get(kind, {})
+    return items if isinstance(items, dict) else {}
+
+
+def has_existing_root(roots: list[Path]) -> bool:
+    return any(root.exists() and root.is_dir() for root in roots)
+
+
+def build_remove_managed_operations(
+    *,
+    state: dict[str, Any],
+    target_id: str,
+    kind: str,
+    write_dir: Path,
+    desired_names: set[str],
+) -> list[dict[str, Any]]:
+    operations: list[dict[str, Any]] = []
+    for name, entry in sorted(managed_items_for_target(state, target_id, kind).items()):
+        if name in desired_names or not isinstance(entry, dict):
+            continue
+
+        dst = Path(str(entry.get("dst") or write_dir / name))
+        if normalized_path(dst.parent) != normalized_path(write_dir):
+            continue
+
+        operations.append(
+            {
+                "type": "remove_managed",
+                "target": target_id,
+                "kind": kind,
+                "name": name,
+                "dst": str(dst),
+                "base": str(write_dir),
+                "expected_src": entry.get("src"),
+                "expected_mode": entry.get("mode"),
+                "expected_fingerprint": entry.get("fingerprint"),
+            }
+        )
+    return operations
 
 
 def collect_named_sources(
@@ -479,6 +640,7 @@ def build_plan(
     docs_source_roots = get_source_docs_roots()
     skill_sources: dict[str, Path] = {}
     docs_sources: dict[str, Path] = {}
+    managed_state = load_managed_state()
 
     if scope in {"all", "md"}:
         for md_source in md_sources:
@@ -503,7 +665,8 @@ def build_plan(
             errors.append(f"目标端点不存在: {target_id}")
             continue
 
-        mode = target_endpoint.get("mode", "junction")
+        skills_mode = endpoint_sync_mode(target_endpoint, "skills")
+        docs_mode = endpoint_sync_mode(target_endpoint, "docs")
 
         if scope in {"all", "md"}:
             target_md = endpoint_md(target_endpoint)
@@ -522,7 +685,8 @@ def build_plan(
         if scope in {"all", "skills"}:
             write_dir = endpoint_skills_write_dir(target_endpoint)
             if write_dir:
-                for skill_name in get_skills_for_target(target_id):
+                target_skills = get_skills_for_target(target_id)
+                for skill_name in target_skills:
                     src = skill_sources.get(skill_name)
                     if src is None:
                         checked = "\n".join(str(root / skill_name) for root in skill_source_roots)
@@ -536,8 +700,18 @@ def build_plan(
                             "name": skill_name,
                             "src": str(src),
                             "dst": str(write_dir / skill_name),
-                            "mode": mode,
+                            "mode": skills_mode,
                         }
+                    )
+                if has_existing_root(skill_source_roots):
+                    operations.extend(
+                        build_remove_managed_operations(
+                            state=managed_state,
+                            target_id=target_id,
+                            kind="skills",
+                            write_dir=write_dir,
+                            desired_names=set(target_skills),
+                        )
                     )
 
         if scope in {"all", "docs"}:
@@ -551,9 +725,19 @@ def build_plan(
                             "name": name,
                             "src": str(src),
                             "dst": str(write_dir / name),
-                            "mode": mode,
+                            "mode": docs_mode,
                             "missing_source": False,
                         }
+                    )
+                if has_existing_root(docs_source_roots):
+                    operations.extend(
+                        build_remove_managed_operations(
+                            state=managed_state,
+                            target_id=target_id,
+                            kind="docs",
+                            write_dir=write_dir,
+                            desired_names=set(docs_sources),
+                        )
                     )
 
     errors.extend(validate_plan_safety(operations))
@@ -568,6 +752,7 @@ def build_plan(
         "docs_src": None,
         "docs_source_roots": [str(path) for path in docs_source_roots],
         "skill_source_roots": [str(path) for path in skill_source_roots],
+        "state_path": str(get_state_path()),
         "operations": operations,
         "errors": errors,
         "warnings": warnings,
@@ -582,6 +767,31 @@ def execute_operation(operation: dict[str, Any]) -> None:
             operation.get("replacements", []),
             overwrite=bool(operation.get("overwrite", True)),
         )
+        return
+
+    if operation["type"] == "remove_managed":
+        dst_path = Path(operation["dst"])
+        if not dst_path.exists() and not dst_path.is_symlink():
+            log(f"[remove-managed] 已不存在: {dst_path}")
+            return
+
+        label = f"{operation.get('type')}:{operation.get('target')}:{operation.get('name', '')}"
+        safety_errors = validate_plan_safety([operation])
+        if safety_errors:
+            raise RuntimeError("\n".join(safety_errors))
+
+        expected_fingerprint = operation.get("expected_fingerprint")
+        if not expected_fingerprint:
+            log(f"[warn] {label} 缺少历史指纹，跳过删除并转为手动项: {dst_path}")
+            return
+
+        current_fingerprint = fingerprint_path(dst_path)
+        if current_fingerprint != expected_fingerprint:
+            log(f"[warn] {label} 已被手动改动，跳过删除并转为手动项: {dst_path}")
+            return
+
+        remove_path(dst_path)
+        log(f"[remove-managed] {dst_path}")
         return
 
     if operation["type"] in {"skills", "docs"}:
@@ -612,6 +822,54 @@ def execute_operation(operation: dict[str, Any]) -> None:
         return
 
     raise ValueError(f"未知 operation type: {operation['type']}")
+
+
+def managed_entry_for_operation(operation: dict[str, Any]) -> dict[str, Any] | None:
+    src = operation.get("src")
+    dst = operation.get("dst")
+    if not src or not dst:
+        return None
+
+    dst_path = Path(dst)
+    if not dst_path.exists() and not dst_path.is_symlink():
+        return None
+
+    return {
+        "src": str(Path(src)),
+        "dst": str(dst_path),
+        "mode": operation.get("mode"),
+        "fingerprint": fingerprint_path(dst_path),
+    }
+
+
+def update_managed_state(plan: dict[str, Any]) -> None:
+    touched: dict[str, set[str]] = {}
+    next_items: dict[str, dict[str, dict[str, Any]]] = {}
+
+    for operation in plan.get("operations", []):
+        op_type = operation.get("type")
+        if op_type in {"skills", "docs"}:
+            target_id = operation["target"]
+            kind = op_type
+            touched.setdefault(target_id, set()).add(kind)
+            entry = managed_entry_for_operation(operation)
+            if entry:
+                next_items.setdefault(target_id, {}).setdefault(kind, {})[operation["name"]] = entry
+        elif op_type == "remove_managed":
+            target_id = operation["target"]
+            kind = operation["kind"]
+            touched.setdefault(target_id, set()).add(kind)
+
+    if not touched:
+        return
+
+    state = load_managed_state()
+    for target_id, kinds in touched.items():
+        target = target_state(state, target_id, create=True)
+        for kind in kinds:
+            target[kind] = next_items.get(target_id, {}).get(kind, {})
+
+    save_managed_state(state)
 
 
 def parse_args() -> argparse.Namespace:
@@ -721,6 +979,11 @@ def main() -> int:
                     f"[dry-run][md] {operation['target']}: "
                     f"{len(operation.get('sources', []))} files -> {operation['dst']}"
                 )
+            elif operation["type"] == "remove_managed":
+                log(
+                    f"[dry-run][remove-managed] {operation['target']}:{operation.get('kind')}:{operation['name']} "
+                    f"{operation['dst']}"
+                )
             else:
                 log(
                     f"[dry-run][{operation['type']}] {operation['target']}:{operation['name']} "
@@ -753,6 +1016,7 @@ def main() -> int:
         log(f"[warn] {warning}")
     for operation in plan["operations"]:
         execute_operation(operation)
+    update_managed_state(plan)
     log("[done] sync finished")
 
     if args.json:

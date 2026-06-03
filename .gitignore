@@ -9,6 +9,8 @@ src-tauri/target/
 
 # Local config and backups
 cc-sync.config.json
+cc-sync.state.json
+cc-sync.state.json.tmp
 *.bak
 
 # Python cache

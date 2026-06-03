@@ -105,7 +105,10 @@ export function EndpointCard({
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full border border-primary-soft-border bg-primary-soft px-3 py-1 text-[0.74rem] font-bold text-primary">
-          {text.modeOptions[endpoint.mode]}
+          {text.app.skillsDir} · {text.modeOptions[endpoint.skills_mode ?? endpoint.mode]}
+        </span>
+        <span className="rounded-full border border-primary-soft-border bg-primary-soft px-3 py-1 text-[0.74rem] font-bold text-primary">
+          {text.app.docsDir} · {text.modeOptions[endpoint.docs_mode ?? endpoint.mode]}
         </span>
       </div>
 

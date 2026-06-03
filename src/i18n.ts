@@ -48,6 +48,8 @@ export type Dictionary = {
     enabled: string;
     disabled: string;
     mode: string;
+    skillsSyncMode: string;
+    docsSyncMode: string;
     mdTarget: string;
     skillsDir: string;
     docsDir: string;
@@ -166,6 +168,8 @@ export const dictionaries: Record<Language, Dictionary> = {
       enabled: "启用",
       disabled: "停用",
       mode: "模式",
+      skillsSyncMode: "技能同步模式",
+      docsSyncMode: "文档同步模式",
       mdTarget: "说明文件",
       skillsDir: "技能目录",
       docsDir: "文档目录",
@@ -231,7 +235,7 @@ export const dictionaries: Record<Language, Dictionary> = {
         "目标：每张卡片上的开关决定是否把输入源同步到该 agent。",
         "工作区是项目根目录；范围决定同步内容（全部 / 说明文件 md / 技能 / 文档）。",
         "技能和文档按名称去重；同名项保留第一个输入源，后续重复项会提示并忽略。",
-        "通用技能发给所有目标；每个目标可在「高级配置」里追加 / 排除技能，或改该目标的文本替换。",
+        "通用技能发给所有目标；每个目标可在「高级配置」里追加 / 排除技能，分别设置技能和文档的同步模式，或改该目标的文本替换。",
         "执行同步：先预览将要执行的操作，确认后才写盘；有错误时不会执行。",
         "配置改动自动保存（首次从旧版升级会先备份为 cc-sync.config.v1.bak）。",
       ],
@@ -290,6 +294,8 @@ export const dictionaries: Record<Language, Dictionary> = {
       enabled: "Enabled",
       disabled: "Disabled",
       mode: "Mode",
+      skillsSyncMode: "Skills sync mode",
+      docsSyncMode: "Docs sync mode",
       mdTarget: "Guide file",
       skillsDir: "Skills dir",
       docsDir: "Docs dir",
@@ -355,7 +361,7 @@ export const dictionaries: Record<Language, Dictionary> = {
         "Targets: the toggle on each card decides whether the inputs sync to that agent.",
         "Workspace is the project root; Scope picks what to sync (all / guide md / skills / docs).",
         "Skills and docs are deduplicated by name; the first matching source wins and later duplicates are ignored with a warning.",
-        "Common skills go to every target; per target you can add/exclude skills or edit target text replacements under Advanced config.",
+        "Common skills go to every target; per target you can add/exclude skills, set separate skills/docs sync modes, or edit target text replacements under Advanced config.",
         "Run sync: previews the operations first and writes only after you confirm; it won't run if there are errors.",
         "Config edits auto-save (the first upgrade from the old layout backs up cc-sync.config.v1.bak).",
       ],

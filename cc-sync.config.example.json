@@ -19,7 +19,9 @@
       "md_local_candidates": [],
       "skills_dirs": [],
       "docs_dirs": [],
-      "mode": "junction"
+      "mode": "junction",
+      "skills_mode": "junction",
+      "docs_mode": "junction"
     },
     "codex": {
       "label": "Codex",
@@ -29,7 +31,9 @@
       "md_local_candidates": [],
       "skills_dirs": [],
       "docs_dirs": [],
-      "mode": "junction"
+      "mode": "junction",
+      "skills_mode": "junction",
+      "docs_mode": "junction"
     },
     "gemini": {
       "label": "Gemini",
@@ -39,7 +43,9 @@
       "md_local_candidates": [],
       "skills_dirs": [],
       "docs_dirs": [],
-      "mode": "junction"
+      "mode": "junction",
+      "skills_mode": "junction",
+      "docs_mode": "junction"
     }
   },
   "sync": {

@@ -64,18 +64,30 @@ Write-Host "[cc-sync] writing default portable config..."
 Copy-Item -LiteralPath (Join-Path $ProjectDir "cc-sync.config.example.json") -Destination (Join-Path $AppDir "cc-sync.config.json")
 
 $ReadmeLines = @(
-    "CC Sync portable",
+    "CC Sync 便携版",
     "",
-    "Usage:",
-    "1. Extract this whole folder.",
-    "2. Double-click `"CC Sync.exe`".",
-    "3. On first launch, choose the project workspace you want to sync.",
-    "4. Add input sources and target paths, then run sync.",
+    "推荐放置位置：",
+    "C:\Users\Admin\Dawn\Trunk\tools\AI\CC Sync",
     "",
-    "Notes:",
-    "- Do not copy only the exe. Keep the python folder, .py scripts, and cc-sync.config.json next to the exe.",
-    "- Runtime paths are relative, so the package can be moved to another machine.",
-    "- Multiple workspaces can be saved and switched from the main screen."
+    "一句话：一处维护，不用手动同步；自己管理实际在用的 skills、docs 和说明文件。",
+    "",
+    "使用方式：",
+    "1. 保持整个文件夹完整，不要只复制 `"CC Sync.exe`"。",
+    "2. 双击 `"CC Sync.exe`" 启动。",
+    "3. 首次启动选择要同步的项目工作区，例如：C:\Users\Admin\Dawn\Trunk。",
+    "4. 添加说明文件、skills 目录、docs 目录等输入源。",
+    "5. 勾选目标端点，例如 Codex / Gemini / Claude Code。",
+    "6. 先看同步预览，确认路径和数量正确后再执行。",
+    "",
+    "目录要求：",
+    "- python 文件夹、sync_agents.py、sync_config.py、sync_from_claude.py、cc-sync.config.json 必须和 exe 放在同一目录。",
+    "- cc-sync.config.json 是本机配置，可以按实际使用习惯调整。",
+    "- cc-sync.state.json 是本机同步状态，用来识别 CC Sync 自己管理过的 skills/docs。",
+    "- 多个 Dawn 工作区可以在界面里保存并切换。",
+    "",
+    "命令行 dry-run：",
+    "cd `"C:\Users\Admin\Dawn\Trunk\tools\AI\CC Sync`"",
+    ".\python\bin\python.exe .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --json"
 )
 $ReadmeLines | Set-Content -LiteralPath (Join-Path $AppDir "README.txt") -Encoding UTF8
 

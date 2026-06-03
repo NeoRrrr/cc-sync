@@ -91,6 +91,21 @@ function uniquePaths(paths: Array<string | null | undefined>): string[] {
 
 function normalizeConfig(config: SyncConfig): SyncConfig {
   const projectRoot = config.project_root ?? "";
+  const endpoints = Object.fromEntries(
+    Object.entries(config.endpoints ?? {}).map(([endpointId, endpoint]) => {
+      const mode = endpoint.mode ?? "junction";
+      return [
+        endpointId,
+        {
+          ...endpoint,
+          mode,
+          skills_mode: endpoint.skills_mode ?? mode,
+          docs_mode: endpoint.docs_mode ?? mode,
+        },
+      ];
+    })
+  ) as Record<string, Endpoint>;
+
   return {
     ...config,
     project_root: projectRoot,
@@ -104,6 +119,7 @@ function normalizeConfig(config: SyncConfig): SyncConfig {
       ...(config.preferences ?? {}),
       close_to_tray: config.preferences?.close_to_tray ?? false,
     },
+    endpoints,
   };
 }
 
@@ -128,6 +144,8 @@ function fillEmptyWorkspaceDefaults(config: SyncConfig): SyncConfig {
           md_local_candidates: endpoint.md_local_candidates.length ? endpoint.md_local_candidates : defaults.md_local_candidates ?? [],
           skills_dirs: endpoint.skills_dirs.length ? endpoint.skills_dirs : defaults.skills_dirs ?? [],
           docs_dirs: endpoint.docs_dirs.length ? endpoint.docs_dirs : defaults.docs_dirs ?? [],
+          skills_mode: endpoint.skills_mode ?? endpoint.mode,
+          docs_mode: endpoint.docs_mode ?? endpoint.mode,
         },
       ];
     })
@@ -181,6 +199,9 @@ function formatOperation(operation: PlanOperation, index: number) {
   const prefix = `${index + 1}. [${operation.type}] ${operation.target}`;
   if (operation.type === "md") {
     return `${prefix}: ${(operation.sources ?? []).length} files -> ${operation.dst}`;
+  }
+  if (operation.type === "remove_managed") {
+    return `${prefix}: ${operation.kind ?? "item"} ${operation.name ?? ""} -> remove ${operation.dst}`;
   }
 
   const name = operation.name ? `${operation.name} ` : "";
@@ -931,18 +952,33 @@ export default function App() {
             onBack={() => setView({ name: "main" })}
           />
           <div className="flex flex-col gap-6 rounded-2xl border border-line bg-card p-6 shadow-[var(--shadow-sm)]">
-            <div className="flex flex-col items-start gap-3">
-              <p className="m-0 text-base font-extrabold text-main">{text.app.mode}</p>
-              <SegmentedControl<SyncMode>
-                ariaLabel={text.app.mode}
-                value={config.endpoints[view.target].mode}
-                onChange={(nextMode) => updateEndpoint(view.target, { mode: nextMode })}
-                options={[
-                  { value: "junction", label: text.modeOptions.junction },
-                  { value: "symlink", label: text.modeOptions.symlink },
-                  { value: "copy", label: text.modeOptions.copy },
-                ]}
-              />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-col items-start gap-3">
+                <p className="m-0 text-base font-extrabold text-main">{text.app.skillsSyncMode}</p>
+                <SegmentedControl<SyncMode>
+                  ariaLabel={text.app.skillsSyncMode}
+                  value={config.endpoints[view.target].skills_mode ?? config.endpoints[view.target].mode}
+                  onChange={(nextMode) => updateEndpoint(view.target, { skills_mode: nextMode })}
+                  options={[
+                    { value: "junction", label: text.modeOptions.junction },
+                    { value: "symlink", label: text.modeOptions.symlink },
+                    { value: "copy", label: text.modeOptions.copy },
+                  ]}
+                />
+              </div>
+              <div className="flex flex-col items-start gap-3">
+                <p className="m-0 text-base font-extrabold text-main">{text.app.docsSyncMode}</p>
+                <SegmentedControl<SyncMode>
+                  ariaLabel={text.app.docsSyncMode}
+                  value={config.endpoints[view.target].docs_mode ?? config.endpoints[view.target].mode}
+                  onChange={(nextMode) => updateEndpoint(view.target, { docs_mode: nextMode })}
+                  options={[
+                    { value: "junction", label: text.modeOptions.junction },
+                    { value: "symlink", label: text.modeOptions.symlink },
+                    { value: "copy", label: text.modeOptions.copy },
+                  ]}
+                />
+              </div>
             </div>
 
             <div className="flex flex-col items-start gap-3">

@@ -16,6 +16,8 @@ use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const TRAY_MENU_SHOW: &str = "show";
 const TRAY_MENU_QUIT: &str = "quit";
+const STATE_FILE_NAME: &str = "cc-sync.state.json";
+const STATE_ENV_VAR: &str = "CC_SYNC_STATE_PATH";
 
 struct TrayState {
     icon: Mutex<Option<TrayIcon>>,
@@ -64,6 +66,25 @@ fn app_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
+#[cfg(debug_assertions)]
+fn default_config_path() -> PathBuf {
+    let portable_config = app_dir().join("cc-sync.config.json");
+    let source_config = source_project_root(&portable_config).join("cc-sync.config.json");
+    if source_config.exists() {
+        return source_config;
+    }
+
+    let cwd_config = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cc-sync.config.json");
+    if cwd_config.exists() {
+        return cwd_config;
+    }
+
+    source_config
+}
+
+#[cfg(not(debug_assertions))]
 fn default_config_path() -> PathBuf {
     let portable_config = app_dir().join("cc-sync.config.json");
     if portable_config.exists() {
@@ -103,6 +124,22 @@ fn load_config_json(config_path: Option<String>) -> Result<(Value, PathBuf, Path
     Ok((value, config_path, project_root))
 }
 
+fn runtime_config_context(
+    config_path: Option<String>,
+    config_override: Option<Value>,
+) -> Result<(Value, PathBuf, PathBuf, bool), String> {
+    if let Some(config) = config_override {
+        let resolved_config_path = config_path
+            .map(PathBuf::from)
+            .unwrap_or_else(default_config_path);
+        let project_root = resolve_project_root(&config, &resolved_config_path);
+        return Ok((config, resolved_config_path, project_root, true));
+    }
+
+    let (config, resolved_config_path, project_root) = load_config_json(config_path)?;
+    Ok((config, resolved_config_path, project_root, false))
+}
+
 fn resolve_runtime_path(project_root: &Path, raw: &str) -> PathBuf {
     let candidate = PathBuf::from(raw);
     if candidate.is_absolute() {
@@ -110,6 +147,38 @@ fn resolve_runtime_path(project_root: &Path, raw: &str) -> PathBuf {
     } else {
         project_root.join(candidate)
     }
+}
+
+fn resolve_runtime_file(runtime_base: &Path, config_path: &Path, raw: &str) -> PathBuf {
+    let primary = resolve_runtime_path(runtime_base, raw);
+    if primary.exists() {
+        return primary;
+    }
+
+    let source_candidate = resolve_runtime_path(&source_project_root(config_path), raw);
+    if source_candidate.exists() {
+        return source_candidate;
+    }
+
+    primary
+}
+
+fn resolve_python_executable(runtime_base: &Path, config_path: &Path, raw: &str) -> PathBuf {
+    let primary = resolve_runtime_path(runtime_base, raw);
+    if primary.exists() {
+        return primary;
+    }
+
+    let source_candidate = resolve_runtime_path(&source_project_root(config_path), raw);
+    if source_candidate.exists() {
+        return source_candidate;
+    }
+
+    if raw.replace('\\', "/").ends_with("python/bin/python.exe") {
+        return PathBuf::from("python");
+    }
+
+    primary
 }
 
 fn clean_frontmatter_value(raw: &str) -> Option<String> {
@@ -270,10 +339,12 @@ fn emit_config(config_path: Option<String>) -> Result<Value, String> {
     let runtime_base = resolved_config_path
         .parent()
         .unwrap_or_else(|| Path::new("."));
+    let python_path = resolve_python_executable(runtime_base, &resolved_config_path, python);
+    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, script);
 
-    let output = Command::new(resolve_runtime_path(runtime_base, python))
+    let output = Command::new(&python_path)
         .current_dir(&project_root)
-        .arg(resolve_runtime_path(runtime_base, script))
+        .arg(script_path)
         .arg("--config")
         .arg(&resolved_config_path)
         .arg("--emit-config")
@@ -314,10 +385,8 @@ fn run_sync(
     scope: String,
     dry_run: bool,
 ) -> Result<Value, String> {
-    let (loaded_config, resolved_config_path, _) = load_config_json(config_path)?;
-    let has_config_override = config_override.is_some();
-    let runtime_config = config_override.unwrap_or(loaded_config);
-    let project_root = resolve_project_root(&runtime_config, &resolved_config_path);
+    let (runtime_config, resolved_config_path, project_root, has_config_override) =
+        runtime_config_context(config_path, config_override)?;
     let temp_config_path = if has_config_override {
         Some(write_temp_config(&resolved_config_path, &runtime_config)?)
     } else {
@@ -341,11 +410,17 @@ fn run_sync(
     let runtime_base = resolved_config_path
         .parent()
         .unwrap_or_else(|| Path::new("."));
+    let python_path = resolve_python_executable(runtime_base, &resolved_config_path, python);
+    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, script);
 
-    let mut command = Command::new(resolve_runtime_path(runtime_base, python));
+    let mut command = Command::new(&python_path);
     command
         .current_dir(&project_root)
-        .arg(resolve_runtime_path(runtime_base, script))
+        .env(
+            STATE_ENV_VAR,
+            resolved_config_path.with_file_name(STATE_FILE_NAME),
+        )
+        .arg(&script_path)
         .arg("--config")
         .arg(effective_config_path)
         .arg("--scope")
@@ -356,9 +431,20 @@ fn run_sync(
         command.arg("--dry-run");
     }
 
-    let output = command
-        .output()
-        .map_err(|err| format!("failed to execute sync script: {}", err))?;
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) => {
+            if let Some(temp_path) = temp_config_path.as_ref() {
+                let _ = fs::remove_file(temp_path);
+            }
+            return Err(format!(
+                "failed to execute sync script: {} (python: {}, script: {})",
+                err,
+                python_path.display(),
+                script_path.display()
+            ));
+        }
+    };
 
     if let Some(temp_path) = temp_config_path {
         let _ = fs::remove_file(temp_path);
@@ -378,8 +464,11 @@ fn load_config_data(config_path: Option<String>) -> Result<Value, String> {
     match emit_config(config_path.clone()) {
         Ok(value) => Ok(value),
         Err(_) => {
-            let (config, _, _) = load_config_json(config_path)?;
-            Ok(config)
+            match load_config_json(config_path) {
+                Ok((config, _, _)) => Ok(config),
+                Err(_) => serde_json::from_str(include_str!("../../cc-sync.config.example.json"))
+                    .map_err(|err| format!("failed to load default config: {}", err)),
+            }
         }
     }
 }
@@ -458,9 +547,7 @@ fn list_available_skills(
     config_path: Option<String>,
     config: Option<Value>,
 ) -> Result<Vec<SkillOption>, String> {
-    let (loaded_config, resolved_config_path, _) = load_config_json(config_path)?;
-    let runtime_config = config.unwrap_or(loaded_config);
-    let project_root = resolve_project_root(&runtime_config, &resolved_config_path);
+    let (_, _, project_root, _) = runtime_config_context(config_path, config)?;
     let mut skills = BTreeMap::<String, SkillOptionBuilder>::new();
 
     let roots: Vec<PathBuf> = dirs
@@ -524,9 +611,7 @@ fn list_target_skills(
     config_path: Option<String>,
     config: Option<Value>,
 ) -> Result<Vec<TargetSkill>, String> {
-    let (loaded_config, resolved_config_path, _) = load_config_json(config_path)?;
-    let runtime_config = config.unwrap_or(loaded_config);
-    let project_root = resolve_project_root(&runtime_config, &resolved_config_path);
+    let (runtime_config, _, project_root, _) = runtime_config_context(config_path, config)?;
     let skills_dir_raw = match target_skills_dir(&runtime_config, &target) {
         Some(raw) => raw,
         None => return Ok(Vec::new()),

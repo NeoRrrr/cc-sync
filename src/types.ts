@@ -23,6 +23,8 @@ export type Endpoint = {
   skills_dirs: string[];
   docs_dirs: string[];
   mode: SyncMode;
+  skills_mode?: SyncMode;
+  docs_mode?: SyncMode;
 };
 
 export type SyncSpec = {
@@ -57,14 +59,16 @@ export type SyncConfig = {
 };
 
 export type PlanOperation = {
-  type: "md" | "skills" | "docs";
+  type: "md" | "skills" | "docs" | "remove_managed";
   target: string;
+  kind?: "skills" | "docs";
   name?: string;
   sources?: string[];
   main_src?: string;
   local_src?: string | null;
   src?: string | null;
   dst: string;
+  base?: string;
   mode?: SyncMode;
   overwrite?: boolean;
   missing_source?: boolean;
@@ -81,6 +85,7 @@ export type SyncPlan = {
   docs_src: string | null;
   docs_source_roots?: string[];
   skill_source_roots: string[];
+  state_path?: string;
   operations: PlanOperation[];
   errors: string[];
   warnings?: string[];
