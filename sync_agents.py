@@ -22,6 +22,9 @@ OUTPUT_JSON = False
 FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
 STATE_FILE_NAME = "cc-sync.state.json"
 STATE_ENV_VAR = "CC_SYNC_STATE_PATH"
+# 执行期(真实写盘时)产生的提示，例如 symlink/junction 不可用回退成 copy。
+# 这些发生在 build_plan 之后，必须单独收集再并回结果，否则只 log 到 stderr 会被桌面壳丢弃。
+EXEC_WARNINGS: list[str] = []
 
 
 def log(msg: str) -> None:
@@ -351,6 +354,23 @@ def create_file_symlink(src: Path, dst: Path) -> None:
     log(f"[symlink-file] {dst} -> {src}")
 
 
+def fallback_note(mode: str, dst: Path, exc: Exception) -> str:
+    """构造一条"链接不可用、已改为复制"的明确提示。"""
+    winerror = getattr(exc, "winerror", None)
+    if mode == "symlink" and winerror == 1314:
+        # WinError 1314 = 缺少创建符号链接的特权(Windows 经典限制)。
+        hint = "(Windows 需开启「开发者模式」或以管理员运行才能创建符号链接)"
+    else:
+        hint = f"(原因: {exc})"
+    return f"{mode} 不可用，已改为复制{hint}: {dst}"
+
+
+def record_fallback(mode: str, dst: Path, exc: Exception) -> None:
+    note = fallback_note(mode, dst, exc)
+    log(f"[warn] {note}")
+    EXEC_WARNINGS.append(note)
+
+
 def link_or_copy_path(src: Path, dst: Path, mode: str) -> None:
     if src.is_dir():
         link_or_copy_dir(src, dst, mode)
@@ -367,7 +387,7 @@ def link_or_copy_path(src: Path, dst: Path, mode: str) -> None:
         except Exception as exc:
             if not CONFIG.get("fallback_to_copy", True):
                 raise
-            log(f"[warn] file symlink 失败，回退 copy: {dst}, err={exc}")
+            record_fallback("symlink", dst, exc)
 
     copy_file(src, dst)
 
@@ -443,7 +463,7 @@ def link_or_copy_dir(src: Path, dst: Path, mode: str) -> None:
         if not CONFIG.get("fallback_to_copy", True) or normalized_mode == "copy":
             raise
 
-        log(f"[warn] {normalized_mode} 失败，回退 copy: {dst}, err={exc}")
+        record_fallback(normalized_mode, dst, exc)
         copy_dir(src, dst)
 
 
@@ -657,6 +677,38 @@ def build_replacements(
     return [[old, new] for (old, new) in pairs]
 
 
+def can_create_symlink() -> bool:
+    """探测当前环境能否创建符号链接(Windows 需开发者模式/管理员)。不确定时返回 True，避免误报。"""
+    import tempfile
+
+    base = Path(tempfile.gettempdir())
+    target = base / "cc-sync-symcheck-target.tmp"
+    link = base / "cc-sync-symcheck-link.tmp"
+    try:
+        target.write_text("x", encoding="utf-8")
+    except OSError:
+        return True
+
+    ok = False
+    try:
+        if link.exists() or link.is_symlink():
+            remove_path(link)
+        os.symlink(str(target), str(link))
+        ok = True
+    except OSError:
+        ok = False
+    finally:
+        try:
+            remove_path(link)
+        except OSError:
+            pass
+        try:
+            target.unlink()
+        except OSError:
+            pass
+    return ok
+
+
 def build_plan(
     source_id: str | None = None,
     target_ids: list[str] | None = None,
@@ -782,6 +834,18 @@ def build_plan(
                             desired_names=set(docs_sources),
                         )
                     )
+
+    # 预览期提示:若选了 symlink 但本机建不了符号链接，提前告知会改为复制(避免点完同步才发现)。
+    uses_symlink = any(
+        str(operation.get("mode", "")).lower() == "symlink"
+        for operation in operations
+        if operation.get("type") in {"skills", "docs"}
+    )
+    if uses_symlink and not can_create_symlink():
+        warnings.append(
+            "当前环境无法创建符号链接(Windows 需开启「开发者模式」或以管理员运行)，"
+            "symlink 模式的项在同步时会改为复制。"
+        )
 
     errors.extend(validate_plan_safety(operations))
 
@@ -1060,6 +1124,13 @@ def main() -> int:
     for operation in plan["operations"]:
         execute_operation(operation)
     update_managed_state(plan)
+
+    # 把执行期产生的回退提示(如 symlink 不可用→复制)并回结果，让桌面壳/前端能看到。
+    if EXEC_WARNINGS:
+        plan["warnings"] = list(plan.get("warnings", [])) + EXEC_WARNINGS
+        for warning in EXEC_WARNINGS:
+            log(f"[warn] {warning}")
+
     log("[done] sync finished")
 
     if args.json:
