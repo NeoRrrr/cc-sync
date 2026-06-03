@@ -93,6 +93,8 @@ npm run tauri:dev
 
 ### 源码打包
 
+Windows 便携包：
+
 ```powershell
 cd cc-sync
 npm install
@@ -110,6 +112,29 @@ npm run tauri:build
 ```text
 portable-dist\CC Sync\
 portable-dist\CC Sync portable.zip
+```
+
+macOS 安装包（在 Mac 上执行）：
+
+```bash
+cd cc-sync
+npm install
+./build-macos.sh
+```
+
+生成结果在：
+
+```text
+release-assets/
+├─ CC.Sync_*_*.dmg
+├─ CC.Sync_*_*.app.zip
+└─ SHA256SUMS-macos-*.txt
+```
+
+macOS 包会把同步脚本作为 Tauri resources 打进 `.app`，首次配置默认保存到：
+
+```text
+~/Library/Application Support/CC Sync/cc-sync.config.json
 ```
 
 ## 推荐使用流程
@@ -192,6 +217,7 @@ python .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --j
 - `src\`：React UI。
 - `src-tauri\`：Tauri 桌面壳。
 - `build-portable.ps1`：生成便携运行目录和 zip。
+- `build-macos.sh`：生成 macOS `.dmg`、`.app.zip` 和校验文件。
 
 ## 不要提交的本地状态
 
@@ -203,6 +229,7 @@ python .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --j
 - `dist\`
 - `src-tauri\target\`
 - `portable-dist\`
+- `release-assets\`
 - `node_modules\`
 - `__pycache__\`
 - `*.tsbuildinfo`

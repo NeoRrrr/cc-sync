@@ -2,5 +2,19 @@
   "version": "0.1.4",
   "notes": "应用内更新检查 + 一键升级（通过 raw manifest，不受 GitHub API 限流）；主界面显示版本号；修复「打开」按钮定位与「打开发布页」链接；更新弹窗换行/去重；下载校验等加固。",
   "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.4/CC.Sync.portable.zip",
-  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"
+  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4",
+  "platforms": {
+    "windows": {
+      "version": "0.1.4",
+      "notes": "应用内更新检查 + 一键升级（通过 raw manifest，不受 GitHub API 限流）；主界面显示版本号；修复「打开」按钮定位与「打开发布页」链接；更新弹窗换行/去重；下载校验等加固。",
+      "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.4/CC.Sync.portable.zip",
+      "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"
+    },
+    "macos": {
+      "version": "0.1.5",
+      "notes": "支持 macOS 构建与 DMG 发布；同步脚本随 Tauri resources 打包；macOS 配置默认保存到 Application Support。",
+      "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.5/CC.Sync_0.1.5_aarch64.dmg",
+      "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.5"
+    }
+  }
 }

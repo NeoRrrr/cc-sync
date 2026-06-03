@@ -115,6 +115,7 @@ export type TargetSkill = {
 
 export type UpdateInfo = {
   current: string;
+  platform: "windows" | "macos" | "linux" | string;
   latest: string | null;
   has_update: boolean;
   download_url: string | null;

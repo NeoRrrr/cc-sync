@@ -4,12 +4,14 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
+use tauri::path::BaseDirectory;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
@@ -20,7 +22,10 @@ fn parse_semver(value: &str) -> Option<(u64, u64, u64)> {
     let minor = parts.next().unwrap_or("0").parse().ok()?;
     // patch may carry a pre-release suffix (e.g. "3-rc1") — take leading digits only.
     let patch_raw = parts.next().unwrap_or("0");
-    let patch_digits: String = patch_raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let patch_digits: String = patch_raw
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     let patch = patch_digits.parse().ok()?;
     Some((major, minor, patch))
 }
@@ -32,6 +37,7 @@ fn is_newer(latest: &str, current: &str) -> bool {
     }
 }
 
+#[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const TRAY_MENU_SHOW: &str = "show";
 const TRAY_MENU_QUIT: &str = "quit";
@@ -73,6 +79,7 @@ struct TargetSkill {
 #[derive(Serialize)]
 struct UpdateInfo {
     current: String,
+    platform: String,
     latest: Option<String>,
     has_update: bool,
     download_url: Option<String>,
@@ -81,25 +88,68 @@ struct UpdateInfo {
 }
 
 fn parse_manifest(json: &Value, current: &str) -> UpdateInfo {
+    parse_manifest_for_platform(json, current, current_update_platform())
+}
+
+fn current_update_platform() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "macos"
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        "linux"
+    }
+}
+
+fn manifest_entry_for_platform<'a>(json: &'a Value, platform: &str) -> Option<&'a Value> {
+    json.get("platforms")
+        .and_then(|value| value.as_object())
+        .and_then(|platforms| platforms.get(platform))
+}
+
+fn manifest_string_field(entry: Option<&Value>, root: &Value, key: &str) -> Option<String> {
+    entry
+        .and_then(|value| value.get(key))
+        .or_else(|| root.get(key))
+        .and_then(|value| value.as_str())
+        .map(String::from)
+}
+
+fn parse_manifest_for_platform(json: &Value, current: &str, platform: &str) -> UpdateInfo {
     // 从 raw.githubusercontent.com 上的 latest.json 解析。用 raw 文件而非 GitHub API:
     // anon API 限额 60/hr 按 IP 共享，公司出口 IP 容易被打满导致检查静默失效;
     // raw 文件不受该限额，公司网也可靠。
-    let latest = json.get("version").and_then(|v| v.as_str());
-    let download_url = json
-        .get("download_url")
-        .and_then(|v| v.as_str())
+    //
+    // v0.1.4 之前的 manifest 只有根级 download_url，且这个 URL 指向 Windows
+    // portable zip。非 Windows 平台不能回退到根级字段，否则 macOS 会拿到 Windows 包。
+    let platform_entry = manifest_entry_for_platform(json, platform);
+    let active_entry = platform_entry.or_else(|| {
+        if platform == "windows" && json.get("version").is_some() {
+            Some(json)
+        } else {
+            None
+        }
+    });
+
+    let latest = active_entry.and_then(|entry| entry.get("version").and_then(|v| v.as_str()));
+    let download_url = active_entry
+        .and_then(|entry| entry.get("download_url"))
+        .and_then(|value| value.as_str())
         .map(String::from);
-    let release_url = json
-        .get("release_url")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let notes = json.get("notes").and_then(|v| v.as_str()).map(String::from);
+    let release_url = manifest_string_field(active_entry, json, "release_url");
+    let notes = manifest_string_field(active_entry, json, "notes");
 
     let has_update =
         latest.map(|l| is_newer(l, current)).unwrap_or(false) && download_url.is_some();
 
     UpdateInfo {
         current: current.to_string(),
+        platform: platform.to_string(),
         latest: latest.map(String::from),
         has_update,
         download_url,
@@ -123,6 +173,7 @@ fn app_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
+#[cfg(any(windows, test))]
 fn build_update_bat(pid: u32, install_dir: &str, staging: &str, cleanup_dir: &str) -> String {
     // 注意:绝不加 /MIR /PURGE;/XF 排除用户的配置与状态，升级永不覆盖它们。
     format!(
@@ -159,7 +210,27 @@ fn default_config_path() -> PathBuf {
     source_config
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), target_os = "macos"))]
+fn default_config_path() -> PathBuf {
+    let cwd_config = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cc-sync.config.json");
+    if cwd_config.exists() {
+        return cwd_config;
+    }
+
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| {
+            home.join("Library")
+                .join("Application Support")
+                .join("CC Sync")
+                .join("cc-sync.config.json")
+        })
+        .unwrap_or_else(|| app_dir().join("cc-sync.config.json"))
+}
+
+#[cfg(all(not(debug_assertions), not(target_os = "macos")))]
 fn default_config_path() -> PathBuf {
     let portable_config = app_dir().join("cc-sync.config.json");
     if portable_config.exists() {
@@ -224,7 +295,12 @@ fn resolve_runtime_path(project_root: &Path, raw: &str) -> PathBuf {
     }
 }
 
-fn resolve_runtime_file(runtime_base: &Path, config_path: &Path, raw: &str) -> PathBuf {
+fn resolve_runtime_file_with_resources(
+    app: Option<&tauri::AppHandle>,
+    runtime_base: &Path,
+    config_path: &Path,
+    raw: &str,
+) -> PathBuf {
     let primary = resolve_runtime_path(runtime_base, raw);
     if primary.exists() {
         return primary;
@@ -235,7 +311,57 @@ fn resolve_runtime_file(runtime_base: &Path, config_path: &Path, raw: &str) -> P
         return source_candidate;
     }
 
+    if let Some(resource) = resolve_bundled_resource(app, raw) {
+        return resource;
+    }
+
     primary
+}
+
+fn resolve_bundled_resource(app: Option<&tauri::AppHandle>, raw: &str) -> Option<PathBuf> {
+    let normalized = raw.replace('\\', "/");
+    let resource_name = Path::new(&normalized)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())?;
+    app.and_then(|handle| {
+        handle
+            .path()
+            .resolve(resource_name, BaseDirectory::Resource)
+            .ok()
+    })
+    .filter(|path| path.exists())
+}
+
+fn default_python_executable() -> &'static str {
+    #[cfg(windows)]
+    {
+        "python/bin/python.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "python3"
+    }
+}
+
+fn platform_python_fallback() -> PathBuf {
+    #[cfg(windows)]
+    {
+        PathBuf::from("python")
+    }
+    #[cfg(not(windows))]
+    {
+        for candidate in [
+            "/usr/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+        ] {
+            let path = PathBuf::from(candidate);
+            if path.exists() {
+                return path;
+            }
+        }
+        PathBuf::from("python3")
+    }
 }
 
 fn resolve_python_executable(runtime_base: &Path, config_path: &Path, raw: &str) -> PathBuf {
@@ -250,7 +376,7 @@ fn resolve_python_executable(runtime_base: &Path, config_path: &Path, raw: &str)
     }
 
     if raw.replace('\\', "/").ends_with("python/bin/python.exe") {
-        return PathBuf::from("python");
+        return platform_python_fallback();
     }
 
     primary
@@ -303,22 +429,13 @@ fn parse_skill_metadata(skill_md: &Path) -> Option<SkillMetadata> {
     Some(metadata)
 }
 
-/* 打开目录，或在资源管理器中定位文件。 */
-fn open_path_in_explorer(raw_path: &str) -> Result<(), String> {
-    let path = PathBuf::from(raw_path);
-    let target = if path.exists() {
-        path
-    } else {
-        path.parent()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| format!("path does not exist: {}", raw_path))?
-    };
-
+#[cfg(target_os = "windows")]
+fn open_path_native(target: &Path) -> Result<(), String> {
     let mut command = Command::new("explorer.exe");
     if target.is_file() {
-        command.arg("/select,").arg(&target);
+        command.arg("/select,").arg(target);
     } else {
-        command.arg(&target);
+        command.arg(target);
     }
 
     let status = command
@@ -333,6 +450,70 @@ fn open_path_in_explorer(raw_path: &str) -> Result<(), String> {
             target.display()
         ))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_path_native(target: &Path) -> Result<(), String> {
+    let mut command = Command::new("open");
+    if target.is_file() {
+        command.arg("-R").arg(target);
+    } else {
+        command.arg(target);
+    }
+    command
+        .spawn()
+        .map_err(|err| format!("failed to open {}: {}", target.display(), err))?;
+    Ok(())
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn open_path_native(target: &Path) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(target)
+        .spawn()
+        .map_err(|err| format!("failed to open {}: {}", target.display(), err))?;
+    Ok(())
+}
+
+/* 打开目录，或在系统文件管理器中定位文件。 */
+fn open_path_in_file_manager(raw_path: &str) -> Result<(), String> {
+    let path = PathBuf::from(raw_path);
+    let target = if path.exists() {
+        path
+    } else {
+        path.parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| format!("path does not exist: {}", raw_path))?
+    };
+
+    open_path_native(&target)
+}
+
+#[cfg(target_os = "windows")]
+fn open_url_native(url: &str) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(url)
+        .spawn()
+        .map_err(|err| format!("failed to open url {}: {}", url, err))?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn open_url_native(url: &str) -> Result<(), String> {
+    Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|err| format!("failed to open url {}: {}", url, err))?;
+    Ok(())
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn open_url_native(url: &str) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map_err(|err| format!("failed to open url {}: {}", url, err))?;
+    Ok(())
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
@@ -397,7 +578,10 @@ fn target_skills_dir(config: &Value, target: &str) -> Option<String> {
 }
 
 /* 跑引擎的 --emit-config，拿到(必要时已从旧版迁移的)规范化 v2 配置。Python 是唯一迁移入口，避免双实现漂移。 */
-fn emit_config(config_path: Option<String>) -> Result<Value, String> {
+fn emit_config(
+    config_path: Option<String>,
+    app: Option<&tauri::AppHandle>,
+) -> Result<Value, String> {
     let (config, resolved_config_path, project_root) = load_config_json(config_path)?;
     let runtime = config
         .get("runtime")
@@ -415,7 +599,8 @@ fn emit_config(config_path: Option<String>) -> Result<Value, String> {
         .parent()
         .unwrap_or_else(|| Path::new("."));
     let python_path = resolve_python_executable(runtime_base, &resolved_config_path, python);
-    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, script);
+    let script_path =
+        resolve_runtime_file_with_resources(app, runtime_base, &resolved_config_path, script);
 
     let output = Command::new(&python_path)
         .current_dir(&project_root)
@@ -467,7 +652,7 @@ fn trusted_runtime_paths(resolved_config_path: &Path) -> (String, String) {
         .as_ref()
         .and_then(|runtime| runtime.get("python_executable"))
         .and_then(|value| value.as_str())
-        .unwrap_or("python/bin/python.exe")
+        .unwrap_or(default_python_executable())
         .to_string();
     let script = on_disk_runtime
         .as_ref()
@@ -479,6 +664,7 @@ fn trusted_runtime_paths(resolved_config_path: &Path) -> (String, String) {
 }
 
 fn run_sync(
+    app: Option<&tauri::AppHandle>,
     config_path: Option<String>,
     config_override: Option<Value>,
     scope: String,
@@ -500,7 +686,8 @@ fn run_sync(
         .parent()
         .unwrap_or_else(|| Path::new("."));
     let python_path = resolve_python_executable(runtime_base, &resolved_config_path, &python);
-    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, &script);
+    let script_path =
+        resolve_runtime_file_with_resources(app, runtime_base, &resolved_config_path, &script);
 
     let mut command = Command::new(&python_path);
     command
@@ -548,10 +735,10 @@ fn run_sync(
 }
 
 #[tauri::command]
-fn load_config_data(config_path: Option<String>) -> Result<Value, String> {
+fn load_config_data(app: tauri::AppHandle, config_path: Option<String>) -> Result<Value, String> {
     // 优先用引擎 --emit-config 拿规范化(必要时已迁移)的配置;引擎不可用(如开发环境无内嵌
     // Python)时回退到原始读取，保证不崩。
-    match emit_config(config_path.clone()) {
+    match emit_config(config_path.clone(), Some(&app)) {
         Ok(value) => Ok(value),
         Err(emit_err) => match load_config_json(config_path.clone()) {
             Ok((config, _, _)) => Ok(config),
@@ -604,6 +791,10 @@ fn save_config_data(config: Value, config_path: Option<String>) -> Result<(), St
     }
 
     let payload = serde_json::to_string_pretty(&config).map_err(|err| err.to_string())?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create config dir {}: {}", parent.display(), err))?;
+    }
 
     // 原子写:先写同目录临时文件，再 rename 覆盖。避免写到一半被杀进程时把真实配置截断/损坏。
     // (Windows 上 fs::rename 使用 MOVEFILE_REPLACE_EXISTING，可原子覆盖同卷已存在文件。)
@@ -624,18 +815,14 @@ fn save_config_data(config: Value, config_path: Option<String>) -> Result<(), St
 
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
-    open_path_in_explorer(&path)
+    open_path_in_file_manager(&path)
 }
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     // 用默认浏览器打开 URL。不要走 open_path——那个按文件路径处理，URL "不存在" 会回退到
-    // .parent() 把最后一段(如版本 tag)切掉，打开错误页。explorer 收到 http(s) URL 会直接交给浏览器。
-    Command::new("explorer.exe")
-        .arg(&url)
-        .spawn()
-        .map_err(|err| format!("failed to open url {}: {}", url, err))?;
-    Ok(())
+    // .parent() 把最后一段(如版本 tag)切掉，打开错误页。
+    open_url_native(&url)
 }
 
 #[tauri::command]
@@ -653,20 +840,22 @@ fn exit_app(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn run_sync_preview(
+    app: tauri::AppHandle,
     scope: String,
     config_path: Option<String>,
     config: Option<Value>,
 ) -> Result<Value, String> {
-    run_sync(config_path, config, scope, true)
+    run_sync(Some(&app), config_path, config, scope, true)
 }
 
 #[tauri::command]
 fn run_sync_execute(
+    app: tauri::AppHandle,
     scope: String,
     config_path: Option<String>,
     config: Option<Value>,
 ) -> Result<Value, String> {
-    run_sync(config_path, config, scope, false)
+    run_sync(Some(&app), config_path, config, scope, false)
 }
 
 /* 扫描给定 skill 目录(由前端按当前内存中的源端点传入，避免依赖磁盘上尚未保存的源选择)。 */
@@ -763,18 +952,8 @@ fn list_target_skills(
             Ok(meta) => meta,
             Err(_) => continue,
         };
-        let is_reparse = meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
-        let kind = if is_reparse {
-            // junction/符号链接：path.is_dir() 会跟随，目标存在则有效，否则失效
-            if path.is_dir() {
-                "link"
-            } else {
-                "broken"
-            }
-        } else if meta.is_dir() {
-            "copy"
-        } else {
-            continue; // 普通文件，忽略
+        let Some(kind) = classify_target_skill(&path, &meta) else {
+            continue;
         };
         items.push(TargetSkill {
             name,
@@ -783,6 +962,38 @@ fn list_target_skills(
     }
     items.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(items)
+}
+
+#[cfg(windows)]
+fn classify_target_skill(path: &Path, meta: &fs::Metadata) -> Option<&'static str> {
+    let is_reparse = meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    if is_reparse {
+        // junction/符号链接：path.is_dir() 会跟随，目标存在则有效，否则失效
+        if path.is_dir() {
+            Some("link")
+        } else {
+            Some("broken")
+        }
+    } else if meta.is_dir() {
+        Some("copy")
+    } else {
+        None
+    }
+}
+
+#[cfg(not(windows))]
+fn classify_target_skill(path: &Path, meta: &fs::Metadata) -> Option<&'static str> {
+    if meta.file_type().is_symlink() {
+        if path.is_dir() {
+            Some("link")
+        } else {
+            Some("broken")
+        }
+    } else if meta.is_dir() {
+        Some("copy")
+    } else {
+        None
+    }
 }
 
 /* 弹原生文件夹选择窗口，返回所选目录(取消则返回 null)。default_path 用于预定位到当前工作区。 */
@@ -823,8 +1034,7 @@ async fn pick_file(
     Ok(picked.map(|file_path| file_path.to_string()))
 }
 
-const MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/NeoRrrr/cc-sync/main/latest.json";
+const MANIFEST_URL: &str = "https://raw.githubusercontent.com/NeoRrrr/cc-sync/main/latest.json";
 
 #[tauri::command]
 fn app_version(app: tauri::AppHandle) -> String {
@@ -859,6 +1069,7 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
         Ok(json) => Ok(parse_manifest(&json, &current)),
         Err(_) => Ok(UpdateInfo {
             current,
+            platform: current_update_platform().to_string(),
             latest: None,
             has_update: false,
             download_url: None,
@@ -868,6 +1079,7 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     }
 }
 
+#[cfg(windows)]
 #[tauri::command]
 async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String, String> {
     let root = std::env::temp_dir().join("cc-sync-update");
@@ -899,7 +1111,11 @@ async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String
             }
             std::io::Write::write_all(&mut file, &buf[..read]).map_err(|err| err.to_string())?;
             downloaded += read as u64;
-            let pct = if total > 0 { (downloaded * 100 / total) as u32 } else { 0 };
+            let pct = if total > 0 {
+                (downloaded * 100 / total) as u32
+            } else {
+                0
+            };
             let _ = app_for_dl.emit("update-progress", pct);
         }
         Ok(())
@@ -930,6 +1146,13 @@ async fn download_and_stage(app: tauri::AppHandle, url: String) -> Result<String
     Ok(stage.to_string_lossy().to_string())
 }
 
+#[cfg(not(windows))]
+#[tauri::command]
+async fn download_and_stage(_app: tauri::AppHandle, _url: String) -> Result<String, String> {
+    Err("自动升级当前只支持 Windows 便携包，请打开发布页手动下载。".to_string())
+}
+
+#[cfg(windows)]
 #[tauri::command]
 fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
     let install_dir = app_dir(); // 已有:exe 所在目录
@@ -955,6 +1178,12 @@ fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
 
     app.exit(0); // 退出，让 helper 能替换被锁的 exe
     Ok(())
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn apply_update(_app: tauri::AppHandle) -> Result<(), String> {
+    Err("自动升级当前只支持 Windows 便携包，请打开发布页手动下载。".to_string())
 }
 
 fn main() {
@@ -1027,29 +1256,78 @@ mod tests {
 
     #[test]
     fn parse_manifest_reads_fields_and_flags_update() {
-        let json: Value = serde_json::from_str(r#"{
+        let json: Value = serde_json::from_str(
+            r#"{
             "version": "0.1.4",
             "notes": "notes here",
             "download_url": "https://example.com/p.zip",
             "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
-        let info = parse_manifest(&json, "0.1.3");
+        let info = parse_manifest_for_platform(&json, "0.1.3", "windows");
+        assert_eq!(info.platform, "windows");
         assert_eq!(info.latest.as_deref(), Some("0.1.4"));
         assert!(info.has_update);
-        assert_eq!(info.download_url.as_deref(), Some("https://example.com/p.zip"));
-        assert_eq!(info.release_url.as_deref(), Some("https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"));
+        assert_eq!(
+            info.download_url.as_deref(),
+            Some("https://example.com/p.zip")
+        );
+        assert_eq!(
+            info.release_url.as_deref(),
+            Some("https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4")
+        );
         assert_eq!(info.notes.as_deref(), Some("notes here"));
     }
 
     #[test]
     fn parse_manifest_no_update_when_same_version() {
-        let json: Value = serde_json::from_str(r#"{
+        let json: Value = serde_json::from_str(
+            r#"{
             "version": "0.1.3",
             "download_url": "https://example.com/x.zip"
-        }"#).unwrap();
-        let info = parse_manifest(&json, "0.1.3");
+        }"#,
+        )
+        .unwrap();
+        let info = parse_manifest_for_platform(&json, "0.1.3", "windows");
         assert!(!info.has_update);
+    }
+
+    #[test]
+    fn parse_manifest_uses_platform_entry_without_cross_platform_download_fallback() {
+        let json: Value = serde_json::from_str(
+            r#"{
+            "version": "0.1.4",
+            "notes": "root windows notes",
+            "download_url": "https://example.com/windows.zip",
+            "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4",
+            "platforms": {
+                "macos": {
+                    "version": "0.1.5",
+                    "notes": "mac notes",
+                    "download_url": "https://example.com/macos.dmg",
+                    "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.5"
+                }
+            }
+        }"#,
+        )
+        .unwrap();
+
+        let mac = parse_manifest_for_platform(&json, "0.1.4", "macos");
+        assert_eq!(mac.platform, "macos");
+        assert_eq!(mac.latest.as_deref(), Some("0.1.5"));
+        assert_eq!(
+            mac.download_url.as_deref(),
+            Some("https://example.com/macos.dmg")
+        );
+        assert!(mac.has_update);
+
+        let linux = parse_manifest_for_platform(&json, "0.1.4", "linux");
+        assert_eq!(linux.platform, "linux");
+        assert_eq!(linux.latest.as_deref(), None);
+        assert_eq!(linux.download_url.as_deref(), None);
+        assert!(!linux.has_update);
     }
 
     #[test]
