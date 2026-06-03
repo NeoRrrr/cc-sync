@@ -379,6 +379,30 @@ fn write_temp_config(base_config_path: &Path, config: &Value) -> Result<PathBuf,
     Ok(temp_path)
 }
 
+/* 命令执行只信任磁盘上的配置:python_executable / script_path 永远从磁盘 config 读，
+ * 绝不读 webview 传入的 override.runtime.*——否则前端能指定任意可执行文件来启动。
+ * 磁盘 config 读不到(如首次运行尚未保存)时退回内置默认，仍然不读 override。 */
+fn trusted_runtime_paths(resolved_config_path: &Path) -> (String, String) {
+    let on_disk_runtime = fs::read_to_string(resolved_config_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|cfg| cfg.get("runtime").cloned());
+
+    let python = on_disk_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.get("python_executable"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("python/bin/python.exe")
+        .to_string();
+    let script = on_disk_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.get("script_path"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("sync_agents.py")
+        .to_string();
+    (python, script)
+}
+
 fn run_sync(
     config_path: Option<String>,
     config_override: Option<Value>,
@@ -393,25 +417,15 @@ fn run_sync(
         None
     };
     let effective_config_path = temp_config_path.as_ref().unwrap_or(&resolved_config_path);
-    let runtime = runtime_config
-        .get("runtime")
-        .and_then(|value| value.as_object())
-        .ok_or_else(|| "missing runtime config".to_string())?;
 
-    let python = runtime
-        .get("python_executable")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| "missing runtime.python_executable".to_string())?;
-    let script = runtime
-        .get("script_path")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| "missing runtime.script_path".to_string())?;
+    // 安全:可执行文件与脚本只信任磁盘配置，override 仅用于同步内容(sources/endpoints 等)。
+    let (python, script) = trusted_runtime_paths(&resolved_config_path);
 
     let runtime_base = resolved_config_path
         .parent()
         .unwrap_or_else(|| Path::new("."));
-    let python_path = resolve_python_executable(runtime_base, &resolved_config_path, python);
-    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, script);
+    let python_path = resolve_python_executable(runtime_base, &resolved_config_path, &python);
+    let script_path = resolve_runtime_file(runtime_base, &resolved_config_path, &script);
 
     let mut command = Command::new(&python_path);
     command
@@ -460,16 +474,31 @@ fn run_sync(
 
 #[tauri::command]
 fn load_config_data(config_path: Option<String>) -> Result<Value, String> {
-    // 通过引擎 --emit-config 拿规范化 v2(必要时已迁移)；引擎不可用时回退到原始读取，保证不崩。
+    // 优先用引擎 --emit-config 拿规范化(必要时已迁移)的配置;引擎不可用(如开发环境无内嵌
+    // Python)时回退到原始读取，保证不崩。
     match emit_config(config_path.clone()) {
         Ok(value) => Ok(value),
-        Err(_) => {
-            match load_config_json(config_path) {
-                Ok((config, _, _)) => Ok(config),
-                Err(_) => serde_json::from_str(include_str!("../../cc-sync.config.example.json"))
-                    .map_err(|err| format!("failed to load default config: {}", err)),
+        Err(emit_err) => match load_config_json(config_path.clone()) {
+            Ok((config, _, _)) => Ok(config),
+            Err(read_err) => {
+                // 关键:只有当配置文件【不存在】时才用内置示例(合法的首次运行)。
+                // 文件存在但解析失败时，必须把错误抛给前端，绝不静默用示例顶替——否则
+                // 用户会以为加载成功，一旦编辑触发自动保存就会把真实(破损)配置覆盖掉。
+                let path = config_path
+                    .map(PathBuf::from)
+                    .unwrap_or_else(default_config_path);
+                if path.exists() {
+                    return Err(format!(
+                        "配置文件存在但无法加载:{} (engine: {} / read: {})",
+                        path.display(),
+                        emit_err,
+                        read_err
+                    ));
+                }
+                serde_json::from_str(include_str!("../../cc-sync.config.example.json"))
+                    .map_err(|err| format!("failed to load default config: {}", err))
             }
-        }
+        },
     }
 }
 
@@ -500,8 +529,22 @@ fn save_config_data(config: Value, config_path: Option<String>) -> Result<(), St
     }
 
     let payload = serde_json::to_string_pretty(&config).map_err(|err| err.to_string())?;
-    fs::write(&path, payload + "\n")
-        .map_err(|err| format!("failed to write {}: {}", path.display(), err))
+
+    // 原子写:先写同目录临时文件，再 rename 覆盖。避免写到一半被杀进程时把真实配置截断/损坏。
+    // (Windows 上 fs::rename 使用 MOVEFILE_REPLACE_EXISTING，可原子覆盖同卷已存在文件。)
+    let mut tmp_name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| std::ffi::OsString::from("cc-sync.config.json"));
+    tmp_name.push(".tmp");
+    let tmp_path = path.with_file_name(tmp_name);
+
+    fs::write(&tmp_path, payload + "\n")
+        .map_err(|err| format!("failed to write {}: {}", tmp_path.display(), err))?;
+    fs::rename(&tmp_path, &path).map_err(|err| {
+        let _ = fs::remove_file(&tmp_path);
+        format!("failed to replace {}: {}", path.display(), err)
+    })
 }
 
 #[tauri::command]

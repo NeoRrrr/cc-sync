@@ -14,8 +14,7 @@ $ReleaseExe = Join-Path $ProjectDir "src-tauri\target\$Configuration\cc-sync.exe
 if (-not $PythonSource) {
     $PythonCandidates = @(
         (Join-Path $ProjectDir "python"),
-        (Join-Path $ProjectDir "..\..\python311\Windows-AMD64"),
-        "C:\Users\Admin\Dawn\Trunk\tools\python311\Windows-AMD64"
+        (Join-Path $ProjectDir "..\..\python311\Windows-AMD64")
     )
 
     foreach ($Candidate in $PythonCandidates) {
@@ -66,15 +65,12 @@ Copy-Item -LiteralPath (Join-Path $ProjectDir "cc-sync.config.example.json") -De
 $ReadmeLines = @(
     "CC Sync 便携版",
     "",
-    "推荐放置位置：",
-    "C:\Users\Admin\Dawn\Trunk\tools\AI\CC Sync",
-    "",
-    "一句话：一处维护，不用手动同步；自己管理实际在用的 skills、docs 和说明文件。",
+    "一句话：一处维护，按需同步；自己管理实际在用的 skills、docs 和说明文件。",
     "",
     "使用方式：",
-    "1. 保持整个文件夹完整，不要只复制 `"CC Sync.exe`"。",
+    "1. 保持整个文件夹完整，不要只复制 `"CC Sync.exe`"。文件夹放在哪里都可以。",
     "2. 双击 `"CC Sync.exe`" 启动。",
-    "3. 首次启动选择要同步的项目工作区，例如：C:\Users\Admin\Dawn\Trunk。",
+    "3. 首次启动选择要同步的项目工作区（你的项目根目录）。",
     "4. 添加说明文件、skills 目录、docs 目录等输入源。",
     "5. 勾选目标端点，例如 Codex / Gemini / Claude Code。",
     "6. 先看同步预览，确认路径和数量正确后再执行。",
@@ -83,10 +79,9 @@ $ReadmeLines = @(
     "- python 文件夹、sync_agents.py、sync_config.py、sync_from_claude.py、cc-sync.config.json 必须和 exe 放在同一目录。",
     "- cc-sync.config.json 是本机配置，可以按实际使用习惯调整。",
     "- cc-sync.state.json 是本机同步状态，用来识别 CC Sync 自己管理过的 skills/docs。",
-    "- 多个 Dawn 工作区可以在界面里保存并切换。",
+    "- 多个项目工作区可以在界面里保存并切换。",
     "",
-    "命令行 dry-run：",
-    "cd `"C:\Users\Admin\Dawn\Trunk\tools\AI\CC Sync`"",
+    "命令行 dry-run（在本文件夹内执行）：",
     ".\python\bin\python.exe .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --json"
 )
 $ReadmeLines | Set-Content -LiteralPath (Join-Path $AppDir "README.txt") -Encoding UTF8

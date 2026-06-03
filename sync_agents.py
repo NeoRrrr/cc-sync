@@ -235,15 +235,49 @@ def validate_plan_safety(operations: list[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
+def _remove_dir_reparse(path: Path) -> None:
+    """删除目录型 junction / 符号链接本身，绝不跟随到目标内容。
+
+    Windows 上对“目录符号链接”调用 unlink() 会抛 PermissionError（需要 RemoveDirectory
+    而非 DeleteFile），所以这里统一用 rmdir：os.rmdir 删的是链接本身，不会递归进目标。
+    """
+    try:
+        os.rmdir(path)
+        return
+    except OSError:
+        pass
+
+    if is_windows():
+        subprocess.run(
+            ["cmd", "/c", "rmdir", str(path)],
+            capture_output=True,
+            text=True,
+            shell=False,
+        )
+    else:
+        path.unlink()
+
+
 def remove_path(path: Path) -> None:
     if not path.exists() and not path.is_symlink():
         return
 
     try:
-        if path.is_file() or path.is_symlink():
+        # reparse point(junction / 符号链接):只删链接本身，绝不跟随删到目标内容。
+        if is_reparse_point(path):
+            if path.is_symlink() and not path.is_dir():
+                # 指向文件的符号链接:unlink 即可。
+                path.unlink()
+            else:
+                # junction、目录符号链接:走 rmdir，避免 Windows 上 unlink 抛 PermissionError。
+                _remove_dir_reparse(path)
+            return
+
+        if path.is_file():
             path.unlink()
             return
 
+        # 真实目录:先试 rmdir(仅空目录成功)，失败再递归删除。
         if is_windows():
             result = subprocess.run(
                 ["cmd", "/c", "rmdir", str(path)],
@@ -300,7 +334,10 @@ def ensure_real_item_parent(dst: Path) -> None:
 
 
 def render_text_for_target(content: str, ordered_pairs: list[list[str]]) -> str:
-    # ordered_pairs 已按 old 长度降序排好（长的先替换），避免 ".claude" 抢在 "CLAUDE.md" 前面。
+    # 注意:这是【全文字面替换】，会命中正文叙述、代码块、URL 里的任意子串。
+    # 例如散文里的 "Claude Code" 也会被改成目标名，".claude" 也会改掉 ".claude-xxx" 的前缀。
+    # ordered_pairs 已按 old 长度降序排好(长的先替换)，只解决 ".claude" vs "CLAUDE.md"
+    # 的前缀抢占，解决不了语义误伤——调整替换规则时请注意这点。
     for pair in ordered_pairs:
         old, new = pair[0], pair[1]
         content = content.replace(old, new)
@@ -647,9 +684,15 @@ def build_plan(
             if md_source.exists() and md_source.is_file():
                 existing_md_sources.append(md_source)
             else:
-                errors.append(f"源 md 不存在: {md_source}")
-        if not md_sources:
-            errors.append("未配置任何源 md 文件")
+                warnings.append(f"源 md 不存在，已跳过: {md_source}")
+        if not existing_md_sources:
+            # md 缺失只在 scope=md(用户明确只要 md)时是 error；scope=all 时降级为 warning，
+            # 否则缺一个 md 源会把整次 skills/docs 同步也一起阻断（success = not errors）。
+            reason = "未配置任何源 md 文件" if not md_sources else "配置的源 md 文件都不存在"
+            if scope == "md":
+                errors.append(reason)
+            else:
+                warnings.append(f"{reason}，已跳过 md 同步")
 
     if scope in {"all", "skills"}:
         skill_sources, skill_warnings = collect_named_sources(skill_source_roots, require_skill_md=True)

@@ -128,6 +128,7 @@ export type Dictionary = {
   logs: {
     configLoaded: (mode: string) => string;
     loadFailed: (message: string) => string;
+    configLoadError: (message: string) => string;
     syncRequested: (scope: string) => string;
     syncFinished: (success: boolean) => string;
     previewReady: (success: boolean) => string;
@@ -256,6 +257,7 @@ export const dictionaries: Record<Language, Dictionary> = {
     logs: {
       configLoaded: (mode) => `配置已加载，当前模式：${mode}`,
       loadFailed: (message) => `加载配置失败：${message}`,
+      configLoadError: (message) => `配置加载失败，已切到只读模式（不会覆盖你的配置文件）：${message}`,
       syncRequested: (scope) => `请求同步，scope=${scope}`,
       syncFinished: (success) => `同步结束，success=${String(success)}`,
       previewReady: (success) => `已生成预览，success=${String(success)}`,
@@ -382,6 +384,7 @@ export const dictionaries: Record<Language, Dictionary> = {
     logs: {
       configLoaded: (mode) => `config loaded in ${mode} mode`,
       loadFailed: (message) => `load config failed: ${message}`,
+      configLoadError: (message) => `config load failed; switched to read-only mode (your file is left untouched): ${message}`,
       syncRequested: (scope) => `sync requested for scope=${scope}`,
       syncFinished: (success) => `sync finished, success=${String(success)}`,
       previewReady: (success) => `preview ready, success=${String(success)}`,

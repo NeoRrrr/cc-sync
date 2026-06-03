@@ -24,7 +24,7 @@ export async function listenCloseRequested(handler: () => void): Promise<() => v
   return listen("cc-sync-close-requested", handler);
 }
 
-export async function loadConfig(): Promise<{ config: SyncConfig; mode: "desktop" | "demo" }> {
+export async function loadConfig(): Promise<{ config: SyncConfig; mode: "desktop" | "demo"; error?: string }> {
   if (!inTauri()) {
     return { config: structuredClone(mockConfig), mode: "demo" };
   }
@@ -32,8 +32,10 @@ export async function loadConfig(): Promise<{ config: SyncConfig; mode: "desktop
   try {
     const config = await invoke<SyncConfig>("load_config_data");
     return { config, mode: "desktop" };
-  } catch {
-    return { config: structuredClone(mockConfig), mode: "demo" };
+  } catch (error) {
+    // 配置文件存在但加载失败时,后端会返回错误(而不是静默顶替示例配置)。这里退回
+    // demo(只读)模式并把原因带出去,避免在 desktop 模式下被自动保存覆盖掉真实配置。
+    return { config: structuredClone(mockConfig), mode: "demo", error: String(error) };
   }
 }
 

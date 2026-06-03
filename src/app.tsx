@@ -292,6 +292,10 @@ export default function App() {
         setConfig(normalized);
         setMode(loaded.mode);
         setShowWorkspacePrompt(!normalized.project_root.trim());
+        if (loaded.error) {
+          // 配置文件存在但加载失败:已退回只读模式，明确告知用户而不是假装加载成功。
+          appendLog(setLogs, "error", text.logs.configLoadError(loaded.error));
+        }
         appendLog(setLogs, "info", text.logs.configLoaded(loaded.mode));
         void refreshDiskSkills(normalized);
         void refreshAvailableSkills(normalized);
