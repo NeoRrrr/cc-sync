@@ -13,6 +13,25 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
+fn parse_semver(value: &str) -> Option<(u64, u64, u64)> {
+    let value = value.trim().trim_start_matches(['v', 'V']);
+    let mut parts = value.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    // patch may carry a pre-release suffix (e.g. "3-rc1") — take leading digits only.
+    let patch_raw = parts.next().unwrap_or("0");
+    let patch_digits: String = patch_raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let patch = patch_digits.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+fn is_newer(latest: &str, current: &str) -> bool {
+    match (parse_semver(latest), parse_semver(current)) {
+        (Some(l), Some(c)) => l > c,
+        _ => false,
+    }
+}
+
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const TRAY_MENU_SHOW: &str = "show";
 const TRAY_MENU_QUIT: &str = "quit";
@@ -775,4 +794,28 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn newer_detects_patch_and_double_digits() {
+        assert!(is_newer("v0.1.4", "0.1.3"));
+        assert!(is_newer("0.1.10", "0.1.9")); // numeric, not string compare
+        assert!(is_newer("v1.0.0", "0.9.9"));
+    }
+
+    #[test]
+    fn newer_is_false_for_same_or_older() {
+        assert!(!is_newer("0.1.3", "0.1.3"));
+        assert!(!is_newer("v0.1.2", "0.1.3"));
+    }
+
+    #[test]
+    fn newer_is_false_for_garbage() {
+        assert!(!is_newer("not-a-version", "0.1.3"));
+        assert!(!is_newer("0.1.4", ""));
+    }
 }
