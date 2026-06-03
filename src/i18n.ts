@@ -119,6 +119,12 @@ export type Dictionary = {
     syncTarget: string;
     notSyncTarget: string;
     chooseFolder: string;
+    updateAvailable: (version: string) => string;
+    updateTitle: (version: string) => string;
+    updateWarning: string;
+    updateDownloading: (pct: number) => string;
+    updateNow: string;
+    updateOpenPage: string;
   };
   modeOptions: {
     junction: string;
@@ -248,6 +254,12 @@ export const dictionaries: Record<Language, Dictionary> = {
       syncTarget: "同步目标",
       notSyncTarget: "不同步",
       chooseFolder: "选择",
+      updateAvailable: (version) => `发现新版本 ${version}，点击升级`,
+      updateTitle: (version) => `升级到 ${version}`,
+      updateWarning: "升级会关闭并重新打开 CC Sync。你的配置和同步状态不会被覆盖。",
+      updateDownloading: (pct) => `下载中… ${pct}%`,
+      updateNow: "立即升级",
+      updateOpenPage: "打开发布页",
     },
     modeOptions: {
       junction: "目录映射",
@@ -375,6 +387,12 @@ export const dictionaries: Record<Language, Dictionary> = {
       syncTarget: "Target",
       notSyncTarget: "Off",
       chooseFolder: "Browse",
+      updateAvailable: (version) => `New version ${version} available — click to update`,
+      updateTitle: (version) => `Update to ${version}`,
+      updateWarning: "Updating will close and reopen CC Sync. Your config and sync state are preserved.",
+      updateDownloading: (pct) => `Downloading… ${pct}%`,
+      updateNow: "Update now",
+      updateOpenPage: "Open release page",
     },
     modeOptions: {
       junction: "Directory link",

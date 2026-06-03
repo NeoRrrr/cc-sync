@@ -1,11 +1,16 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import {
+  appVersion,
+  applyUpdate,
+  checkUpdate,
+  downloadAndStage,
   exitApp,
   getAvailableSkills,
   hideMainWindow,
   listTargetSkills,
   listenCloseRequested,
   loadConfig,
+  onUpdateProgress,
   openPath,
   pickFile,
   pickFolder,
@@ -15,7 +20,7 @@ import {
 } from "./lib/client";
 import { dictionaries, loadLanguage, saveLanguage, type Language } from "./i18n";
 import { applyTheme, loadTheme, saveTheme, watchSystemTheme, type Theme } from "./theme";
-import type { ActivityLog, AvailableSkillOption, Endpoint, PlanOperation, SourceConfig, SyncConfig, SyncMode, SyncPlan, SyncScope, TargetSkill } from "./types";
+import type { ActivityLog, AvailableSkillOption, Endpoint, PlanOperation, SourceConfig, SyncConfig, SyncMode, SyncPlan, SyncScope, TargetSkill, UpdateInfo } from "./types";
 import { SegmentedControl } from "./components/SegmentedControl";
 import { Modal } from "./components/Modal";
 import { SubpageHeader } from "./components/SubpageHeader";
@@ -23,8 +28,6 @@ import { SkillCheckboxList } from "./components/SkillCheckboxList";
 import { EndpointCard } from "./components/EndpointCard";
 import { SettingsView } from "./components/SettingsView";
 import { GearIcon, InfoIcon } from "./components/icons";
-
-const APP_VERSION = "0.1.1";
 
 const WORKSPACE_DEFAULT_SOURCES: SourceConfig = {
   md_files: [],
@@ -253,6 +256,11 @@ export default function App() {
     skills_dirs: "",
     docs_dirs: "",
   });
+  const [appVersionStr, setAppVersionStr] = useState<string>("");
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<number>(0);
+  const [showUpdate, setShowUpdate] = useState(false);
   const text = dictionaries[language];
   const configRef = useRef<SyncConfig | null>(null);
 
@@ -304,6 +312,15 @@ export default function App() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const v = await appVersion();
+      if (v) setAppVersionStr(v);
+      const info = await checkUpdate(); // 失败返回 null，静默
+      if (info?.has_update) setUpdate(info);
+    })();
   }, []);
 
   useEffect(() => {
@@ -362,12 +379,12 @@ export default function App() {
 
   /* 只有浮层需要锁滚动。 */
   useEffect(() => {
-    const open = Boolean(confirmPlan || syncNotice || saveNotice || showHelp || showWorkspacePrompt || closeDialog);
+    const open = Boolean(confirmPlan || syncNotice || saveNotice || showHelp || showWorkspacePrompt || closeDialog || showUpdate);
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [confirmPlan, syncNotice, saveNotice, showHelp, showWorkspacePrompt, closeDialog]);
+  }, [confirmPlan, syncNotice, saveNotice, showHelp, showWorkspacePrompt, closeDialog, showUpdate]);
 
   useEffect(() => {
     if (!saveNotice || saveNotice.level !== "success") {
@@ -713,6 +730,17 @@ export default function App() {
               <button type="button" className="icon-btn" aria-label={text.app.help} title={text.app.help} onClick={() => setShowHelp(true)}>
                 <InfoIcon />
               </button>
+              {update?.has_update && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={text.app.updateAvailable(update.latest ?? "")}
+                  title={text.app.updateAvailable(update.latest ?? "")}
+                  onClick={() => setShowUpdate(true)}
+                >
+                  ⬆
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
               <button type="button" className="utility-action" onClick={() => setView({ name: "sources" })} disabled={!hasWorkspace} title={hasWorkspace ? undefined : text.app.workspaceRequired}>
@@ -943,7 +971,7 @@ export default function App() {
           onTheme={setTheme}
           closeToTray={config.preferences.close_to_tray}
           onCloseToTray={setCloseToTrayPreference}
-          version={APP_VERSION}
+          version={appVersionStr || update?.current || ""}
           onBack={() => setView({ name: "main" })}
         />
       )}
@@ -1037,6 +1065,52 @@ export default function App() {
             </div>
           </div>
         </section>
+      )}
+
+      {showUpdate && update && (
+        <Modal
+          title={text.app.updateTitle(update.latest ?? "")}
+          closeLabel={text.app.cancel}
+          showHeaderClose={!updateBusy}
+          onClose={() => (updateBusy ? undefined : setShowUpdate(false))}
+        >
+          {update.notes && <pre className="update-notes">{update.notes}</pre>}
+          <p className="m-0 text-[0.9rem] text-main">{text.app.updateWarning}</p>
+          {updateBusy && <p className="m-0 text-[0.9rem] text-dim">{text.app.updateDownloading(updateProgress)}</p>}
+          <div className="mt-1 flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="primary-action"
+              disabled={updateBusy || !update.download_url}
+              onClick={async () => {
+                if (!update.download_url) return;
+                setUpdateBusy(true);
+                const stop = await onUpdateProgress(setUpdateProgress);
+                try {
+                  const staging = await downloadAndStage(update.download_url);
+                  await applyUpdate(staging); // app 将退出并由 helper 接管
+                } catch (err) {
+                  appendLog(setLogs, "error", String(err));
+                  setUpdateBusy(false);
+                  stop();
+                }
+              }}
+            >
+              {text.app.updateNow}
+            </button>
+            <button
+              type="button"
+              className="utility-action"
+              disabled={updateBusy}
+              onClick={() => update.release_url && void openPath(update.release_url)}
+            >
+              {text.app.updateOpenPage}
+            </button>
+            <button type="button" className="utility-action" disabled={updateBusy} onClick={() => setShowUpdate(false)}>
+              {text.app.cancel}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {confirmPlan && (
