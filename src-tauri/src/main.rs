@@ -803,6 +803,52 @@ async fn pick_file(
     Ok(picked.map(|file_path| file_path.to_string()))
 }
 
+const RELEASES_LATEST_URL: &str =
+    "https://api.github.com/repos/NeoRrrr/cc-sync/releases/latest";
+
+#[tauri::command]
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    let current = app.package_info().version.to_string();
+
+    let fetched = tauri::async_runtime::spawn_blocking(|| -> Result<Value, String> {
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("cc-sync-updater")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|err| err.to_string())?;
+        let resp = client
+            .get(RELEASES_LATEST_URL)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .map_err(|err| err.to_string())?;
+        if !resp.status().is_success() {
+            // 限流(403)/无 release(404)/网络异常都走这里
+            return Err(format!("github api status {}", resp.status()));
+        }
+        resp.json::<Value>().map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+
+    // 失败一律软返回 has_update=false，前端静默，不打扰用户。
+    match fetched {
+        Ok(json) => Ok(parse_release(&json, &current)),
+        Err(_) => Ok(UpdateInfo {
+            current,
+            latest: None,
+            has_update: false,
+            download_url: None,
+            release_url: None,
+            notes: None,
+        }),
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(TrayState {
@@ -824,7 +870,9 @@ fn main() {
             list_available_skills,
             list_target_skills,
             pick_folder,
-            pick_file
+            pick_file,
+            app_version,
+            check_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
