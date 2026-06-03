@@ -1,6 +1,6 @@
 {
-  "version": "0.1.3",
-  "notes": "docs symlink 不可用时不再静默回退、md 缺失不阻断同步、原子写配置、命令执行信任边界、配置加载失败明确报错、目录符号链接删除修复，以及 README/打包脚本去个人化。",
-  "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.3/CC.Sync.portable.zip",
-  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.3"
+  "version": "0.1.4",
+  "notes": "应用内更新检查 + 一键升级（通过 raw manifest，不受 GitHub API 限流）；主界面显示版本号；修复「打开」按钮定位与「打开发布页」链接；更新弹窗换行/去重；下载校验等加固。",
+  "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.4/CC.Sync.portable.zip",
+  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.4"
 }
