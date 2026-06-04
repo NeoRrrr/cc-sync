@@ -43,8 +43,8 @@ CC Sync 的目标很窄：**一处维护，多端同步**。它不管理 API pro
 - **docs 同步与去重**：同步每个 docs 源目录下的直接子项，同名文档保留第一个来源。
 - **三种同步模式**：skills/docs 可分别选择目录映射（junction）、符号链接（symlink）或复制。
 - **安全预览**：执行前生成计划；存在错误时不写盘。
-- **本地优先**：同步逻辑由本地 Python 引擎执行，配置与状态文件保存在本机。
-- **桌面 GUI + CLI 验证**：日常用界面操作，排查时可直接跑 `sync_agents.py --dry-run --json`。
+- **本地优先**：同步逻辑由 Rust 内置引擎执行，配置与状态文件保存在本机。
+- **桌面 GUI + 预览验证**：日常用界面操作，写盘前先看同步预览。
 
 ## 适合谁
 
@@ -65,14 +65,10 @@ Windows 便携包是自包含的，保持整个文件夹完整，双击 `CC Sync
 CC Sync/
 ├─ CC Sync.exe
 ├─ cc-sync.config.json
-├─ sync_agents.py
-├─ sync_config.py
-├─ sync_from_claude.py
-├─ python\
 └─ README.txt
 ```
 
-不要只复制 `CC Sync.exe`。内嵌 Python、同步脚本和配置文件必须和 exe 放在同一目录。
+同步引擎已经内置在 `CC Sync.exe` 中，不需要 Python。建议保留同目录的配置和状态文件，方便便携使用。
 
 macOS 包可从 release 页面下载，源码构建见下方命令。
 
@@ -196,43 +192,29 @@ release-assets/
 └─ SHA256SUMS-macos-*.txt
 ```
 
-macOS 包会把同步脚本作为 Tauri resources 打进 `.app`，首次配置默认保存到：
+macOS 包内置同步引擎，首次配置默认保存到：
 
 ```text
 ~/Library/Application Support/CC Sync/cc-sync.config.json
 ```
 
-## 命令行验证
+## 本地验证
 
 在源码仓库里验证：
 
 ```powershell
-python -m py_compile sync_config.py sync_agents.py sync_from_claude.py
 npm run build
 cd src-tauri
 cargo check
 ```
 
-如果本地有真实配置，还可以先跑 dry-run：
-
-```powershell
-python .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --json
-```
-
-在便携目录里验证：
-
-```powershell
-.\python\bin\python.exe .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --json
-```
-
-常用检查：
-
-```powershell
-.\python\bin\python.exe .\sync_agents.py --config .\cc-sync.config.json --list-skills --json
-.\python\bin\python.exe .\sync_agents.py --config .\cc-sync.config.json --scope md --target codex --dry-run --json
-```
+如果本地有真实配置，也要用桌面端同步预览确认计划和警告，再执行写盘。
 
 ## FAQ
+
+### 从旧 Python 便携包升级会丢配置吗？
+
+不会。新版继续保留同目录的 `cc-sync.config.json` 和 `cc-sync.state.json`；旧配置里的 `runtime` 字段会被忽略并在保存时清理。旧包升级后残留的 `python/` 和旧脚本会在新版启动时从程序目录移除。
 
 ### CC Sync 会帮我切换 API provider 吗？
 
@@ -249,10 +231,6 @@ python .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --j
 ### 为什么需要 dry-run？
 
 同步工具最怕路径配错。dry-run 会先展示写入、复制、链接、跳过、警告和错误，让你确认计划后再真正写盘。
-
-### `sync_from_claude.py` 还能用吗？
-
-可以，但它只是旧入口兼容 wrapper。新行为以 `sync_agents.py` 为准。
 
 ## English Summary
 

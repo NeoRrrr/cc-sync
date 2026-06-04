@@ -26,12 +26,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": {
-      "../sync_agents.py": "sync_agents.py",
-      "../sync_config.py": "sync_config.py",
-      "../sync_from_claude.py": "sync_from_claude.py",
-      "../cc-sync.config.example.json": "cc-sync.config.example.json"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

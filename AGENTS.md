@@ -1,11 +1,10 @@
 # Agent Notes
 
-This repository is a local desktop GUI for syncing agent docs, skills, and merged Markdown files. It combines a React/Tauri UI with a Python sync engine.
+This repository is a local desktop GUI for syncing agent docs, skills, and merged Markdown files. It combines a React/Tauri UI with a Rust sync engine.
 
 ## Project Conventions
 
-- Treat `sync_agents.py` as the canonical sync engine.
-- Keep `sync_from_claude.py` as a compatibility wrapper only.
+- Treat `src-tauri/src/sync_engine.rs` as the canonical sync engine.
 - Do not commit local runtime state:
   - `cc-sync.config.json`
   - `cc-sync.state.json`
@@ -21,9 +20,7 @@ This repository is a local desktop GUI for syncing agent docs, skills, and merge
 
 ## Directory Notes
 
-- `sync_agents.py`: canonical sync engine.
-- `sync_from_claude.py`: legacy compatibility wrapper only.
-- `sync_config.py`: default config and config migration logic.
+- `src-tauri/src/sync_engine.rs`: canonical sync engine, default config, and config migration logic.
 - `cc-sync.config.example.json`: public example config.
 - `cc-sync.config.json`: local real config; do not commit.
 - `cc-sync.state.json`: local sync state; do not commit.
@@ -60,17 +57,13 @@ This repository is a local desktop GUI for syncing agent docs, skills, and merge
 Before committing behavior changes, run the relevant checks:
 
 ```powershell
-python -m py_compile sync_config.py sync_agents.py sync_from_claude.py
 npm run build
 cd src-tauri
 cargo check
 ```
 
-When a local config exists, also run a dry-run sync check:
+When a local config exists, also verify the desktop preview flow against it.
 
-```powershell
-python .\sync_agents.py --config .\cc-sync.config.json --scope all --dry-run --json
-```
 
 ## Codegraph
 

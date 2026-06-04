@@ -71,10 +71,5 @@ export const mockConfig: SyncConfig = {
   },
   preferences: {
     close_to_tray: false
-  },
-  runtime: {
-    python_executable: "python/bin/python.exe",
-    script_path: "sync_agents.py",
-    config_path: "cc-sync.config.json"
   }
 };

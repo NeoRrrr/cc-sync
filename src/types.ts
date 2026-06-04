@@ -1,12 +1,6 @@
 export type SyncMode = "junction" | "symlink" | "copy";
 export type SyncScope = "all" | "md" | "skills" | "docs";
 
-export type RuntimeConfig = {
-  python_executable: string;
-  script_path: string;
-  config_path: string;
-};
-
 export type SourceConfig = {
   md_files: string[];
   skills_dirs: string[];
@@ -55,7 +49,6 @@ export type SyncConfig = {
   skill_selection: SkillSelection;
   replacements: Record<string, Record<string, string>>;
   preferences: PreferencesConfig;
-  runtime: RuntimeConfig;
 };
 
 export type PlanOperation = {
