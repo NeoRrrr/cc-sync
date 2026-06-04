@@ -3,15 +3,15 @@ import type { SyncConfig } from "../types";
 /* 非桌面(浏览器 demo)模式下展示用的示例配置(v3 输入源集合模型)。 */
 export const mockConfig: SyncConfig = {
   schema_version: 3,
-  project_root: "",
-  workspaces: [],
+  project_root: "C:\\Projects\\agent-workspace",
+  workspaces: ["C:\\Projects\\agent-workspace", "D:\\Repos\\customer-portal"],
   overwrite_md: true,
   fallback_to_copy: true,
   verbose: true,
   sources: {
-    md_files: [],
-    skills_dirs: [],
-    docs_dirs: []
+    md_files: ["shared\\AGENT_BASE.md", "shared\\TEAM_RULES.md"],
+    skills_dirs: ["shared\\skills", "team\\skills"],
+    docs_dirs: ["shared\\docs", "runbooks"]
   },
   endpoints: {
     claude: {
@@ -19,9 +19,9 @@ export const mockConfig: SyncConfig = {
       dir: ".claude",
       name: "Claude Code",
       md: "CLAUDE.md",
-      md_local_candidates: [],
-      skills_dirs: [],
-      docs_dirs: [],
+      md_local_candidates: [".claude\\CLAUDE.local.md"],
+      skills_dirs: [".claude\\skills"],
+      docs_dirs: [".claude\\docs"],
       mode: "junction"
     },
     codex: {
@@ -30,8 +30,8 @@ export const mockConfig: SyncConfig = {
       name: "Codex",
       md: "AGENTS.md",
       md_local_candidates: [],
-      skills_dirs: [],
-      docs_dirs: [],
+      skills_dirs: [".codex\\skills"],
+      docs_dirs: [".codex\\docs"],
       mode: "junction"
     },
     gemini: {
@@ -40,17 +40,17 @@ export const mockConfig: SyncConfig = {
       name: "Gemini",
       md: "GEMINI.md",
       md_local_candidates: [],
-      skills_dirs: [],
-      docs_dirs: [],
+      skills_dirs: [".gemini\\skills"],
+      docs_dirs: [".gemini\\docs"],
       mode: "junction"
     }
   },
   sync: {
-    targets: ["codex"]
+    targets: ["claude", "codex", "gemini"]
   },
   skill_selection: {
-    common: [],
-    extra: { codex: [], gemini: [] },
+    common: ["ui-expert", "release-checklist"],
+    extra: { codex: ["repo-reviewer"], gemini: ["doc-summarizer"] },
     exclude: { codex: [], gemini: [] }
   },
   replacements: {

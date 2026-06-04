@@ -8,12 +8,29 @@ This repository is a local desktop GUI for syncing agent docs, skills, and merge
 - Keep `sync_from_claude.py` as a compatibility wrapper only.
 - Do not commit local runtime state:
   - `cc-sync.config.json`
+  - `cc-sync.state.json`
   - `.codegraph/`
   - `dist/`
   - `src-tauri/target/`
   - `portable-dist/`
+  - `release-assets/`
   - `node_modules/`
+  - `__pycache__/`
+  - `*.tsbuildinfo`
 - Prefer PowerShell-safe commands and paths. This project is normally edited on Windows.
+
+## Directory Notes
+
+- `sync_agents.py`: canonical sync engine.
+- `sync_from_claude.py`: legacy compatibility wrapper only.
+- `sync_config.py`: default config and config migration logic.
+- `cc-sync.config.example.json`: public example config.
+- `cc-sync.config.json`: local real config; do not commit.
+- `cc-sync.state.json`: local sync state; do not commit.
+- `src/`: React UI.
+- `src-tauri/`: Tauri desktop shell.
+- `build-portable.ps1`: builds the Windows portable directory and zip.
+- `build-macos.sh`: builds macOS `.dmg`, `.app.zip`, and checksum assets.
 
 ## Sync Model
 

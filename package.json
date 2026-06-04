@@ -2,6 +2,7 @@
   "name": "cc-sync",
   "version": "0.1.5",
   "description": "Local desktop GUI for merging agent Markdown, docs, and skills into multiple agent targets.",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
