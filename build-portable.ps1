@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PortableRoot = Join-Path $ProjectDir "portable-dist"
 $AppDir = Join-Path $PortableRoot "CC Sync"
-$ZipPath = Join-Path $PortableRoot "CC Sync portable.zip"
+$ZipPath = Join-Path $PortableRoot "CC.Sync.portable.zip"
 $ReleaseExe = Join-Path $ProjectDir "src-tauri\target\$Configuration\cc-sync.exe"
 
 Set-Location $ProjectDir
