@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.1.5"
+        description: "Release tag, for example v0.1.6. macos-v0.1.6 is also accepted."
         required: true
         type: string
   push:
     tags:
-      - "v*"
+      - "macos-v*"
 
 permissions:
   contents: write
@@ -24,15 +24,23 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            checkout_ref="${{ inputs.tag }}"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            checkout_ref="${GITHUB_REF_NAME}"
           fi
+
+          release_tag="$checkout_ref"
+          if [[ "$release_tag" == macos-v* ]]; then
+            release_tag="${release_tag#macos-}"
+          fi
+
+          echo "checkout_ref=${checkout_ref}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.release.outputs.tag }}
+          ref: ${{ steps.release.outputs.checkout_ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -52,7 +60,7 @@ jobs:
       - name: Create release if needed
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ steps.release.outputs.release_tag }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "CC Sync $TAG" --notes "macOS release assets for $TAG."
@@ -60,5 +68,5 @@ jobs:
       - name: Upload macOS assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ steps.release.outputs.release_tag }}
         run: gh release upload "$TAG" release-assets/* --clobber
