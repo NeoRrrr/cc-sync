@@ -257,14 +257,32 @@ pub fn build_plan(
         if matches!(scope, "all" | "md") {
             if let Some(target_md) = endpoint_md(endpoint, &root) {
                 if !existing_md_sources.is_empty() {
-                    operations.push(json!({
-                        "type": "md",
-                        "target": target_id,
-                        "sources": path_strings(&existing_md_sources),
-                        "dst": target_md.to_string_lossy().to_string(),
-                        "overwrite": config.get("overwrite_md").and_then(Value::as_bool).unwrap_or(true),
-                        "replacements": build_replacements(config, endpoint, &target_id)
-                    }));
+                    let md_sources_for_target: Vec<PathBuf> = existing_md_sources
+                        .iter()
+                        .filter(|src| {
+                            if paths_are_same(src, &target_md, true) {
+                                warnings.push(format!(
+                                    "md:{} 源和目标相同，已跳过: {}",
+                                    target_id,
+                                    src.display()
+                                ));
+                                false
+                            } else {
+                                true
+                            }
+                        })
+                        .cloned()
+                        .collect();
+                    if !md_sources_for_target.is_empty() {
+                        operations.push(json!({
+                            "type": "md",
+                            "target": target_id,
+                            "sources": path_strings(&md_sources_for_target),
+                            "dst": target_md.to_string_lossy().to_string(),
+                            "overwrite": config.get("overwrite_md").and_then(Value::as_bool).unwrap_or(true),
+                            "replacements": build_replacements(config, endpoint, &target_id)
+                        }));
+                    }
                 }
             }
         }
@@ -282,12 +300,22 @@ pub fn build_plan(
                         errors.push(format!("未找到 skill: {}\n已检查:\n{}", skill_name, checked));
                         continue;
                     };
+                    let dst = write_dir.join(skill_name);
+                    if paths_are_same(src, &dst, !is_reparse_point(&dst)) {
+                        warnings.push(format!(
+                            "skills:{}:{} 源和目标相同，已跳过: {}",
+                            target_id,
+                            skill_name,
+                            src.display()
+                        ));
+                        continue;
+                    }
                     operations.push(json!({
                         "type": "skills",
                         "target": target_id,
                         "name": skill_name,
                         "src": src.to_string_lossy().to_string(),
-                        "dst": write_dir.join(skill_name).to_string_lossy().to_string(),
+                        "dst": dst.to_string_lossy().to_string(),
                         "mode": skills_mode
                     }));
                 }
@@ -308,12 +336,24 @@ pub fn build_plan(
         if matches!(scope, "all" | "docs") {
             if let Some(write_dir) = endpoint_write_dir(endpoint, "docs", &root) {
                 for (name, src) in &docs_sources {
+                    let dst = write_dir.join(name);
+                    let resolve_paths = !(is_reparse_point(&dst)
+                        || dst.parent().map(is_reparse_point).unwrap_or(false));
+                    if paths_are_same(src, &dst, resolve_paths) {
+                        warnings.push(format!(
+                            "docs:{}:{} 源和目标相同，已跳过: {}",
+                            target_id,
+                            name,
+                            src.display()
+                        ));
+                        continue;
+                    }
                     operations.push(json!({
                         "type": "docs",
                         "target": target_id,
                         "name": name,
                         "src": src.to_string_lossy().to_string(),
-                        "dst": write_dir.join(name).to_string_lossy().to_string(),
+                        "dst": dst.to_string_lossy().to_string(),
                         "mode": docs_mode,
                         "missing_source": false
                     }));
@@ -931,14 +971,29 @@ fn is_path_within(child: &Path, parent: &Path) -> bool {
     child_norm.starts_with(&prefix)
 }
 
+fn paths_are_same(src: &Path, dst: &Path, resolve_paths: bool) -> bool {
+    if normalized_path(src) == normalized_path(dst) {
+        return true;
+    }
+    if resolve_paths {
+        let src_resolved = PathBuf::from(resolved_normalized_path(src));
+        let dst_resolved = PathBuf::from(resolved_normalized_path(dst));
+        if normalized_path(&src_resolved) == normalized_path(&dst_resolved) {
+            return true;
+        }
+    }
+    false
+}
+
 fn validate_src_dst_safety(
     src: &Path,
     dst: &Path,
     label: &str,
     resolve_paths: bool,
 ) -> Vec<String> {
+    // 源和目标相同是无害情况（自我复制等于空操作），交由计划阶段跳过，不作为错误阻断。
     if normalized_path(src) == normalized_path(dst) {
-        return vec![format!("{} 源和目标相同，已阻止: {} -> {}", label, src.display(), dst.display())];
+        return Vec::new();
     }
 
     let mut errors = Vec::new();
@@ -953,7 +1008,6 @@ fn validate_src_dst_safety(
         let src_resolved = PathBuf::from(resolved_normalized_path(src));
         let dst_resolved = PathBuf::from(resolved_normalized_path(dst));
         if normalized_path(&src_resolved) == normalized_path(&dst_resolved) {
-            errors.push(format!("{} 源和目标解析后相同，已阻止: {} -> {}", label, src.display(), dst.display()));
             return errors;
         }
         if is_path_within(&dst_resolved, &src_resolved) {

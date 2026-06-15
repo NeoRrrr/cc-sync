@@ -7,7 +7,8 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PortableRoot = Join-Path $ProjectDir "portable-dist"
 $AppDir = Join-Path $PortableRoot "CC Sync"
-$ZipPath = Join-Path $PortableRoot "CC.Sync.portable.zip"
+$Version = (node -p "require('./package.json').version").Trim()
+$ZipPath = Join-Path $PortableRoot "CC.Sync_${Version}_x64.portable.zip"
 $ReleaseExe = Join-Path $ProjectDir "src-tauri\target\$Configuration\cc-sync.exe"
 
 Set-Location $ProjectDir
@@ -60,5 +61,11 @@ $ReadmeLines | Set-Content -LiteralPath (Join-Path $AppDir "README.txt") -Encodi
 Write-Host "[cc-sync] creating zip..."
 Compress-Archive -LiteralPath $AppDir -DestinationPath $ZipPath -CompressionLevel Optimal
 
+Write-Host "[cc-sync] writing SHA256SUMS..."
+$ShaFile = Join-Path $PortableRoot "SHA256SUMS-windows-${Version}.txt"
+$Hash = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLower()
+"$Hash  $(Split-Path -Leaf $ZipPath)" | Set-Content -LiteralPath $ShaFile -Encoding ASCII
+
 Write-Host "[cc-sync] portable zip ready:"
 Write-Host $ZipPath
+Write-Host $ShaFile

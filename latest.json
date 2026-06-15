@@ -1,14 +1,14 @@
 {
-  "version": "0.1.6",
-  "notes": "Windows 包更新到 Rust 内置同步引擎；不再依赖 Python 脚本，保留配置和状态文件的非破坏式升级。",
-  "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.6/CC.Sync.portable.zip",
-  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.6",
+  "version": "0.1.7",
+  "notes": "「源和目标相同」不再阻断整个同步：自我复制的项自动跳过并记为警告，其余项照常执行。",
+  "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.7/CC.Sync_0.1.7_x64.portable.zip",
+  "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.7",
   "platforms": {
     "windows": {
-      "version": "0.1.6",
-      "notes": "Windows 包更新到 Rust 内置同步引擎；不再依赖 Python 脚本，保留配置和状态文件的非破坏式升级。",
-      "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.6/CC.Sync.portable.zip",
-      "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.6"
+      "version": "0.1.7",
+      "notes": "「源和目标相同」不再阻断整个同步：自我复制的项自动跳过并记为警告，其余项照常执行。",
+      "download_url": "https://github.com/NeoRrrr/cc-sync/releases/download/v0.1.7/CC.Sync_0.1.7_x64.portable.zip",
+      "release_url": "https://github.com/NeoRrrr/cc-sync/releases/tag/v0.1.7"
     },
     "macos": {
       "version": "0.1.5",
